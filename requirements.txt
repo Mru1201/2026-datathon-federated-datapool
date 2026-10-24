@@ -1,3 +1,4 @@
-mcp>=1.13.0
+# mcp 2.x renamed FastMCP to MCPServer and changed other APIs; server.py and the
+# tests use the 1.x API. Raise this cap only together with a migration.
+mcp>=1.13.0,<2
 pandas>=2.2.0
-fastmcp
