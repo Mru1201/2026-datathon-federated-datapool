@@ -7,6 +7,7 @@ __pycache__/
 env/
 venv/
 .venv/
+.pytest_cache/
 
 # Logs
 *.log
@@ -19,10 +20,11 @@ Thumbs.db
 .idea/
 .vscode/
 
-
 # Environment variables
 .env
 
-# Eval reports
+# Test reports (eval report, dashboard snapshot)
 reports/
+
+# Virtualenv of the self-hosted CI runner
 .venv-ci/

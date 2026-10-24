@@ -9,7 +9,7 @@ local CSVs in `data/`. Every query goes through the custom `SparqlClient` class 
 
 | | |
 |---|---|
-| Endpoint | `https://sosuse.correlaid.org/directory/sparql` (override with `$SPARQL_ENDPOINT`) |
+| Endpoint | `https://sosuse.correlaid.org/directory/sparql` (override with the `SPARQL_ENDPOINT` environment variable) |
 | Protocol | SPARQL 1.1 over HTTP: `GET ?query=<urlencoded>` |
 | Result format | `application/sparql-results+json` (also CSV/TSV, Turtle for CONSTRUCT/DESCRIBE) |
 | Auth | none, public |
@@ -160,7 +160,7 @@ service matches are substrings (`CONTAINS`, no regex). Statistics trim values wi
 
 The CSV datasets and the RDF use the same IRIs and properties: a CSV row is an entity, a
 filled cell is a triple, an empty cell is a missing triple. `tests/unit/test_sparql_parity.py`
-runs these queries on `directory.ttl` and checks that the results are identical to the old
+runs these queries on `data/directory.ttl` and checks that the results are identical to the old
 `DataRepository` run on tables derived from the same file.
 
 | Tool | Old CSV logic | SPARQL equivalent |
@@ -189,6 +189,6 @@ runs these queries on `directory.ttl` and checks that the results are identical 
 1. Write the `.rq` file following the naming schema, with the header, and add it to the table above.
 2. Add a `SparqlClient` method that calls `self.select("<query_name>", ...)` and returns a plain value.
 3. Add an `@mcp.tool()` in `server.py` that calls the method, and register it in `SMOKE_ARGS`.
-4. Add offline tests in `tests/unit/` (run the query on `directory.ttl` or a small Turtle
+4. Add offline tests in `tests/unit/` (run the query on `data/directory.ttl` or a small Turtle
    snippet via `LocalSparqlClient(load_graph(...))`), live tests in `tests/api/`, and
    describe them in `TEST.md`.

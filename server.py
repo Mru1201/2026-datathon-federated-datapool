@@ -1,64 +1,26 @@
+"""AWO MCP server: exposes the federated directory of social support services as MCP tools.
+
+Each tool calls one SparqlClient method (src/sparql_client.py), which runs the queries in
+sparql_queries/ against the live SPARQL endpoint. Run with `python server.py` (stdio).
+"""
+
 import json
-import math
 import sys
 
 from mcp.server.fastmcp import FastMCP
 
 from src.sparql_client import SparqlClient
 
-
-# --------------------------------------------------
-# Data source: live SPARQL API (see QUERIES.md)
-# --------------------------------------------------
-
 sparql = SparqlClient()
-
-
-# --------------------------------------------------
-# MCP server
-# --------------------------------------------------
 
 mcp = FastMCP("AWO MCP")
 
 
-# --------------------------------------------------
-# Helpers
-# --------------------------------------------------
-
-def normalize_nan(value):
-    """Convert pandas/NumPy NaN values to JSON-compatible None."""
-
-    if isinstance(value, dict):
-        return {
-            key: normalize_nan(item)
-            for key, item in value.items()
-        }
-
-    if isinstance(value, list):
-        return [
-            normalize_nan(item)
-            for item in value
-        ]
-
-    if isinstance(value, float) and math.isnan(value):
-        return None
-
-    return value
-
-
 def to_json(data) -> str:
-    """Convert Python data to a JSON string."""
+    """Serialize a tool result; umlauts stay readable instead of being \\u-escaped."""
 
-    return json.dumps(
-        normalize_nan(data),
-        ensure_ascii=False,
-        indent=2,
-    )
+    return json.dumps(data, ensure_ascii=False, indent=2)
 
-
-# --------------------------------------------------
-# MCP Tools
-# --------------------------------------------------
 
 @mcp.tool()
 def count_facilities(city: str) -> int:
@@ -71,6 +33,7 @@ def count_facilities(city: str) -> int:
     """
 
     return sparql.count_facilities(city)
+
 
 @mcp.tool()
 def detect_duplicates() -> str:
@@ -86,9 +49,8 @@ def detect_duplicates() -> str:
         duplicated entries and the shared column values.
     """
 
-    results = sparql.detect_duplicates()
+    return to_json(sparql.detect_duplicates())
 
-    return to_json(results)
 
 @mcp.tool()
 def search_facilities(city: str) -> str:
@@ -102,9 +64,7 @@ def search_facilities(city: str) -> str:
         JSON containing matching facilities and their basic contact/address information.
     """
 
-    results = sparql.search_facilities(city)
-
-    return to_json(results)
+    return to_json(sparql.search_facilities(city))
 
 
 @mcp.tool()
@@ -120,9 +80,7 @@ def get_facility_details(name: str) -> str:
         and the facility's service description.
     """
 
-    results = sparql.get_facility_details(name)
-
-    return to_json(results)
+    return to_json(sparql.get_facility_details(name))
 
 
 @mcp.tool()
@@ -137,9 +95,8 @@ def search_services(query: str) -> str:
         JSON containing matching services.
     """
 
-    results = sparql.search_services(query)
+    return to_json(sparql.search_services(query))
 
-    return to_json(results)
 
 @mcp.tool()
 def check_completeness() -> str:
@@ -154,9 +111,8 @@ def check_completeness() -> str:
         completeness statistics.
     """
 
-    results = sparql.check_completeness()
+    return to_json(sparql.check_completeness())
 
-    return to_json(results)
 
 @mcp.tool()
 def generate_statistics() -> str:
@@ -168,15 +124,11 @@ def generate_statistics() -> str:
         service statistics, and relationship statistics.
     """
 
-    results = sparql.generate_statistics()
+    return to_json(sparql.generate_statistics())
 
-    return to_json(results)
 
 @mcp.tool()
-def compare_facilities(
-    facility_1: str,
-    facility_2: str,
-) -> str:
+def compare_facilities(facility_1: str, facility_2: str) -> str:
     """
     Compare two facilities by name.
 
@@ -188,19 +140,10 @@ def compare_facilities(
         JSON containing the details of both facilities.
     """
 
-    results = sparql.compare_facilities(
-        facility_1,
-        facility_2,
-    )
+    return to_json(sparql.compare_facilities(facility_1, facility_2))
 
-    return to_json(results)
-
-# --------------------------------------------------
-# Run server
-# --------------------------------------------------
 
 if __name__ == "__main__":
+    # stdout carries the MCP protocol, so log to stderr.
     print("AWO MCP server starting...", file=sys.stderr)
     mcp.run()
-
-    

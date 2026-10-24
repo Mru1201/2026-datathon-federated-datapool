@@ -1,30 +1,15 @@
 """Smoke test: can we reach Ollama through Open WebUI?
 
-Needs OPENWEBUI_URL and OPENWEBUI_API_KEY (from .env or the environment).
-Optionally OPENWEBUI_MODEL; otherwise the first listed model is used.
+Needs OPENWEBUI_URL and OPENWEBUI_API_KEY (from .env, loaded by the root conftest.py,
+or the environment). Optionally OPENWEBUI_MODEL; otherwise the first listed model is used.
 """
 
 import os
-from pathlib import Path
 
 import httpx
 import pytest
 
 pytestmark = pytest.mark.llm
-
-
-def _load_env_file() -> None:
-    env_file = Path(__file__).resolve().parents[2] / ".env"
-    if not env_file.exists():
-        return
-    for line in env_file.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, value = line.split("=", 1)
-            os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
-
-
-_load_env_file()
 
 BASE_URL = os.environ.get("OPENWEBUI_URL", "http://localhost:3000").rstrip("/")
 API_KEY = os.environ.get("OPENWEBUI_API_KEY")

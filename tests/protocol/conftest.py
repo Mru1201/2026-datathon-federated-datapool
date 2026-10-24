@@ -1,4 +1,4 @@
-"""Run the MCP protocol tests offline: the server's SPARQL client reads directory.ttl."""
+"""Run the MCP protocol tests offline: the server's SPARQL client reads data/directory.ttl."""
 
 import pytest
 

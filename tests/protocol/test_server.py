@@ -1,7 +1,7 @@
 """MCP protocol layer: does the real server expose and run its tools correctly?
 
 Uses an in-memory MCP client against server.py (no LLM, no network): conftest.py swaps
-the server's SPARQL client for one that runs the real queries on directory.ttl. Result
+the server's SPARQL client for one that runs the real queries on data/directory.ttl. Result
 correctness is checked in tests/unit/test_sparql_parity.py (offline) and tests/api/ (live).
 When you add a tool, add an entry to SMOKE_ARGS below.
 """
@@ -84,7 +84,7 @@ def test_tool_returns_valid_json_without_nan(tool):
         pytest.fail(f"{tool} output is not valid JSON ({exc}); starts with: {text[:200]!r}")
     assert "NaN" not in text, (
         f"{tool} output contains a bare NaN (invalid JSON for many clients); "
-        "normalize_nan() in server.py missed a value"
+        "a SparqlClient method returned a float NaN"
     )
 
 

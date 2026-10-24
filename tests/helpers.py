@@ -3,11 +3,11 @@
 import asyncio
 import csv
 import json
-from pathlib import Path
 
 import pandas as pd
 
 from conftest import DATA_DIR
+from src.sparql_client import DATASETS, SparqlClient, expand
 
 CSV_FILES = {
     "einrichtung": "einrichtungSchema.csv",
@@ -95,23 +95,17 @@ def mcp_call_once(name: str, arguments: dict | None = None) -> tuple[bool, str]:
     return _MCP_RESULTS[key]
 
 
-class CachingSparqlClient:
-    """SparqlClient for tests: each (query, params) is sent once per test session."""
+class CachingSparqlClient(SparqlClient):
+    """SparqlClient for tests: each query is sent once per client instance."""
 
-    def __new__(cls, *args, **kwargs):
-        from src.sparql_client import SparqlClient
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cache = {}
 
-        class _Caching(SparqlClient):
-            def __init__(self, *a, **k):
-                super().__init__(*a, **k)
-                self.cache = {}
-
-            def query(self, sparql: str) -> dict:
-                if sparql not in self.cache:
-                    self.cache[sparql] = super().query(sparql)
-                return self.cache[sparql]
-
-        return _Caching(*args, **kwargs)
+    def query(self, sparql: str) -> dict:
+        if sparql not in self.cache:
+            self.cache[sparql] = super().query(sparql)
+        return self.cache[sparql]
 
 
 def pretty(value) -> str:
@@ -120,7 +114,7 @@ def pretty(value) -> str:
 
 # ---- SPARQL parity: directory.ttl is the single source --------------------------
 
-TTL_FILE = DATA_DIR.parent / "directory.ttl"
+TTL_FILE = DATA_DIR / "directory.ttl"
 
 TTL_PREFIXES = """\
 @prefix schema: <http://schema.org/> .
@@ -151,8 +145,6 @@ def graph_to_frames(graph) -> dict:
     """
     import rdflib
 
-    from src.sparql_client import DATASETS, expand
-
     frames = {}
     for name, dataset in DATASETS.items():
         records = []
@@ -169,24 +161,22 @@ def graph_to_frames(graph) -> dict:
     return frames
 
 
-class LocalSparqlClient:
+class LocalSparqlClient(SparqlClient):
     """SparqlClient that runs queries on an in-memory rdflib graph instead of HTTP."""
 
-    def __new__(cls, graph):
-        from src.sparql_client import SparqlClient
+    def __init__(self, graph):
+        super().__init__(endpoint="local://rdflib")
+        self.graph = graph
 
-        class _Local(SparqlClient):
-            def query(self, sparql: str) -> dict:
-                result = json.loads(graph.query(sparql).serialize(format="json"))
-                if "results" in result:
-                    # rdflib quirk: GROUP BY over zero matches yields one empty row;
-                    # the SPARQL spec (and the live Fuseki endpoint) yield none.
-                    result["results"]["bindings"] = [
-                        b for b in result["results"]["bindings"] if b
-                    ]
-                return result
-
-        return _Local(endpoint="local://rdflib")
+    def query(self, sparql: str) -> dict:
+        result = json.loads(self.graph.query(sparql).serialize(format="json"))
+        if "results" in result:
+            # rdflib quirk: GROUP BY over zero matches yields one empty row;
+            # the SPARQL spec (and the live Fuseki endpoint) yield none.
+            result["results"]["bindings"] = [
+                b for b in result["results"]["bindings"] if b
+            ]
+        return result
 
 
 def make_sources(turtle: str | None = None):

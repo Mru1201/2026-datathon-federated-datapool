@@ -1,275 +1,168 @@
 # AWO MCP Server
 
-MCP (Model Context Protocol) server that exposes processed AWO facility data to AI assistants like Claude Desktop.
+An [MCP](https://modelcontextprotocol.io) server that lets AI assistants (Claude Desktop,
+Claude Code, any MCP client) answer questions about social support facilities and services
+in Germany: "How many facilities are in Berlin?", "Find addiction counselling services",
+"How complete is the data?".
 
-## Overview
+The data comes **live** from the *Federated directory of social support services in
+Germany* (SoSuSe), a public SPARQL endpoint run by CorrelAid:
+`https://sosuse.correlaid.org/directory/sparql`.
 
-This MCP server provides a standardized interface between AI assistants and AWO organizational data. It enables natural language queries about AWO facilities, services, and statistics.
+> **History.** The project started at a datathon on a local CSV export of AWO data
+> (`data/*.csv`). All tools now query the live directory instead. The directory federates
+> several providers (mostly Caritas and DHS, AWO is a small part), so numbers are much larger
+> than in the CSV days (e.g. Berlin: 646 facilities instead of 151).
 
-**Data Source:** Processed AWO datasets (facilities, addresses, services, providers)
-
-**Status:** ✅ Production-ready
+![AWO MCP demo with Claude Desktop](assets/awo_mcp_claude_demo.gif)
 
 ---
 
-## Architecture
+## How it works
 
 ```text
-User
-  │
-Claude Desktop
-  │
-MCP Server (this repo)
-  │
-Processed AWO Data (CSV)
+AI assistant (Claude Desktop, Claude Code, ...)
+   │  MCP over stdio
+server.py               8 MCP tools; each calls one SparqlClient method and returns JSON
+   │
+src/sparql_client.py    loads a query file, fills in the parameters, sends it,
+   │                    turns the result rows into the tool's answer
+sparql_queries/*.rq     one SPARQL query per file
+   │  HTTP GET, application/sparql-results+json
+SoSuSe SPARQL endpoint
 ```
 
----
+Tools never build query strings themselves. User input only reaches a query through
+`load_query()`, which escapes it as a SPARQL string literal. Details: [QUERIES.md](QUERIES.md).
 
-## Features
+## Repository layout
 
-### Available Tools
+| Path | What it is |
+|---|---|
+| `server.py` | The MCP server. Defines the 8 tools. Their docstrings are what the LLM reads to choose a tool, so keep them descriptive. |
+| `src/sparql_client.py` | `SparqlClient`: one method per tool, plus `load_query()` and the `DATASETS` definition (RDF class and columns of facilities, addresses, services, providers). |
+| `sparql_queries/` | The SPARQL queries, one `.rq` file each, with a fixed naming scheme and header ([QUERIES.md](QUERIES.md)). You can paste them into the endpoint's web UI. |
+| `src/legacy/` | The old pandas/CSV implementation. **Not used by the server.** Kept as the reference that the offline parity tests compare the SPARQL queries against. |
+| `data/directory.ttl` | RDF snapshot of the directory. The offline tests run the real queries on it, so CI needs no network. |
+| `data/*Schema.csv` | The original AWO CSV export. Used only by the legacy tests; its headers define the `DATASETS` columns. |
+| `tests/` | Five test layers (unit, MCP protocol, live API, LLM connection, LLM tool-calling evals) and a live test dashboard. See [TEST.md](TEST.md). |
+| `.github/workflows/` | CI: offline tests on every push, live API tests and LLM evals on manual trigger. |
+| `doc/` | Datathon presentations. |
 
-| Tool                         | Description                        | Example                                   |
-| ---------------------------- | ---------------------------------- | ----------------------------------------- |
-| `count_facilities(city)`     | Count facilities in a city         | "How many AWO facilities are in Berlin?"  |
-| `search_facilities(city)`    | List all facilities in a city      | "Show me all AWO facilities in Berlin"    |
-| `get_facility_details(name)` | Get detailed info about a facility | "Tell me about AWO Sozialstation Wedding" |
-| `search_services(query)`     | Search for services by keyword     | "Find addiction services"                 |
-| `generate_statistics()`      | Get data statistics                | "Show me statistics about AWO facilities" |
-| `check_completeness()`       | Check data quality                 | "Check data completeness for AWO records" |
-| `detect_duplicates()`        | Find duplicate records             | "Are there duplicates in the AWO data?"   |
-| `compare_facilities(f1, f2)` | Compare two facilities             | "Compare AWO Mitte and AWO Spree-Wuhle"   |
+## Tools
 
----
+| Tool | What it returns | Example question |
+|---|---|---|
+| `count_facilities(city)` | Number of facilities in a city | "How many facilities are in Berlin?" |
+| `search_facilities(city)` | Facilities in a city with address and contact data | "List the facilities in Berlin with their contact info" |
+| `get_facility_details(name)` | Details, address and provider of facilities whose name contains `name` | "Tell me about the facility Drehscheibe" |
+| `compare_facilities(facility_1, facility_2)` | `get_facility_details` for both names, side by side | "Compare Drehscheibe and Metropolitankapitel" |
+| `search_services(query)` | Services whose name, category or audience contains `query` | "Which services are there around Suchtberatung?" |
+| `generate_statistics()` | Dataset sizes; facilities per city, category and provider; services per category and audience; how many facilities have an address or provider | "Give me statistics about the directory" |
+| `check_completeness()` | Missing values per dataset and column | "Which columns have missing values?" |
+| `detect_duplicates()` | Groups of entries that are identical except for their IRI | "Are there duplicate entries?" |
 
-## Installation
+Matching is case-insensitive (`GIESSEN` finds `Gießen`). City matches are **exact**, so
+`Berlin` does not include `Berlin-Mitte`. Name and service searches are substring matches.
 
-### 1. Clone the Repository
+## Setup
+
+Requires Python 3.11+.
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/awo-mcp-production.git
+git clone git@github.com:istiyaksiddiquee/awo-mcp-production.git
 cd awo-mcp-production
+conda create -n awo-mcp python=3.11   # or: python3.11 -m venv .venv
+conda activate awo-mcp                # or: source .venv/bin/activate
+pip install -r requirements.txt       # the server only needs `mcp`
+pip install -r requirements-dev.txt   # only for running the tests
 ```
 
-### 2. Create and Activate Conda Environment
+## Connecting an assistant
 
-```bash
-conda create -n awo-mcp python=3.11
-conda activate awo-mcp
-```
+The server speaks MCP over stdio: the assistant starts `python server.py` itself, so you
+don't run it by hand. Use **absolute paths** to the Python interpreter of your environment
+(`which python` / `where python` inside the activated environment) and to `server.py`.
 
-### 3. Install Dependencies
+### Claude Desktop
 
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Verify Data Files
-
-Ensure the following CSV files exist in the `data/` directory:
-
-* `einrichtungSchema.csv` - Facilities
-* `adresseSchema.csv` - Addresses
-* `angebotSchema.csv` - Services
-* `traegerSchema.csv` - Providers
-
----
-
-## Running the Server
-
-Start the MCP server:
-
-```bash
-python server.py
-```
-
-The server will start and wait for MCP requests. Leave this terminal running.
-
----
-
-## Connecting to Claude Desktop
-
-### Step 1: Install Claude Desktop
-
-Download from [Claude Desktop](https://claude.ai/download).
-
-> **Note:** No Claude subscription is required for MCP server integration.
-
-### Step 2: Configure MCP Server
-
-1. Open Claude Desktop.
-2. Go to **Settings → Developer → Local MCP Servers → Edit Config**.
-3. Add the following configuration:
+Settings → Developer → Edit Config, then add:
 
 ```json
 {
   "mcpServers": {
     "awo": {
-      "command": "C:\\Users\\<YOUR_USERNAME>\\miniconda3\\envs\\awo-mcp\\python.exe",
-      "args": [
-        "D:\\path\\to\\awo-mcp-production\\server.py"
-      ]
+      "command": "/Users/<you>/miniconda3/envs/awo-mcp/bin/python",
+      "args": ["/path/to/awo-mcp-production/server.py"]
     }
   }
 }
 ```
 
-### Step 3: Restart Claude Desktop
+On Windows the paths look like `C:\\Users\\<you>\\miniconda3\\envs\\awo-mcp\\python.exe`
+and `C:\\path\\to\\awo-mcp-production\\server.py`. Restart Claude Desktop completely. The
+server then shows up under Settings → Developer with a green status.
 
-Save the configuration and restart Claude Desktop completely.
+### Claude Code
 
-The MCP server should appear under **Settings → Developer → Local MCP Servers** with a green status.
-
----
-
-## Example Queries
-
-Once connected, try asking Claude:
-
-### Count Facilities
-
-> "How many AWO facilities are in Berlin?"
-
-### Search by City
-
-> "Show me all AWO facilities in Berlin with their addresses"
-
-### Get Facility Details
-
-> "Tell me about AWO Sozialstation Wedding"
-
-### Search Services
-
-> "Find AWO services related to addiction counseling"
-
-### Get Statistics
-
-> "Show me statistics about AWO facilities"
-
-### Data Quality
-
-> "Check data completeness for AWO records"
-
-### Find Duplicates
-
-> "Are there any duplicates in the AWO datasets?"
-
-### Compare Facilities
-
-> "Compare AWO Mitte and AWO Spree-Wuhle"
-
----
-
-## Data Overview
-
-The server uses four CSV datasets:
-
-| Dataset                 | Description             | Count |
-| ----------------------- | ----------------------- | ----- |
-| `einrichtungSchema.csv` | AWO facilities          | 168   |
-| `adresseSchema.csv`     | Addresses               | 108   |
-| `angebotSchema.csv`     | Services                | 99    |
-| `traegerSchema.csv`     | Providers/Organizations | 4     |
-
----
-
-## File Structure
-
-```text
-awo-mcp-production/
-├── data/                      # CSV datasets
-│   ├── einrichtungSchema.csv
-│   ├── adresseSchema.csv
-│   ├── angebotSchema.csv
-│   └── traegerSchema.csv
-├── src/                       # Core modules
-│   ├── sparql_client.py       # SPARQL client used by all tools (see QUERIES.md)
-│   └── legacy/                # old CSV implementation, reference for parity tests
-│       ├── data_loader.py
-│       └── data_repository.py
-├── sparql_queries/            # one .rq file per query
-├── server.py                  # MCP server
-├── requirements.txt
-└── README.md
+```bash
+claude mcp add awo -- /path/to/python /path/to/awo-mcp-production/server.py
 ```
 
----
+### Configuration
+
+| Environment variable | Default | Purpose |
+|---|---|---|
+| `SPARQL_ENDPOINT` | `https://sosuse.correlaid.org/directory/sparql` | SPARQL endpoint the tools query |
+
+The server reads this from its process environment only, not from `.env` (`.env` is for
+the tests). To set it for Claude Desktop, add `"env": {"SPARQL_ENDPOINT": "..."}` to the
+server entry above.
 
 ## Testing
 
-### Test the Server
-
 ```bash
-python -c "from server import mcp; print('✅ Server loaded successfully')"
+pytest -m "not llm and not api"   # offline unit + MCP protocol tests (~8 s, what CI runs)
+pytest -m api tests               # every tool against the live endpoint (~1 min)
 ```
 
-### Run the Client (Optional)
+`pytest` opens a live dashboard in your browser (`--no-dashboard` to turn it off). The LLM
+evals need a running Open WebUI and are described with everything else in [TEST.md](TEST.md).
 
-If you have `client.py` for interactive testing:
+## Known limitations
 
-```bash
-python client.py
-```
+* **Live dependency.** If the endpoint is down or slow (client timeout: 30 s), the tools
+  return an MCP error.
+* **City names are not normalised** in the source data (`Berlin-Mitte`, `Berlin- Tempelhof`,
+  ...). The exact city match counts none of these.
+* **Large answers.** `generate_statistics` lists ~5,800 cities, and `check_completeness` /
+  `detect_duplicates` scan all ~67k entities (5–15 s). There is no paging yet.
+* **Few provider links.** Only a few dozen facilities have a `schema:parentOrganization`,
+  so per-provider statistics are thin.
 
----
-
-## Deployment
-
-### Local Development
-
-* Run `python server.py` directly.
-* Connect Claude Desktop to the local server.
-
-### Cloud Deployment
-
-* Deploy to a cloud VM or container.
-* Configure Claude Desktop to use a remote endpoint when supported.
-
----
-## Demo with Claude Desktop
-
-Here a video of the demo with Claude Desktop:
-
-![AWO MCP Demo with Claude Desktop](assets/awo_mcp_claude_demo.gif)
+More on the data model and the endpoint: [QUERIES.md](QUERIES.md).
 
 ## Troubleshooting
 
-### Server Not Showing in Claude Desktop
+**The server doesn't show up in Claude Desktop.** Check the config for JSON errors
+(trailing commas) and make sure both paths exist. Logs: `~/Library/Logs/Claude/mcp*.log`
+(macOS), `%APPDATA%\Claude\logs\mcp*.log` (Windows).
 
-* Check the JSON syntax in the configuration file.
-* Make sure there are no trailing commas.
-* Verify that the Python path exists.
-* Check Claude logs at:
+**The server fails to start.** Run it by hand with the same interpreter to see the error:
+`/path/to/python server.py`. It should print `AWO MCP server starting...` and then wait for
+input (stop it with Ctrl+C). A `ModuleNotFoundError` means the dependencies aren't
+installed in that environment.
 
-```text
-%APPDATA%\Claude\logs\mcp*.log
-```
-
-### Server Fails to Start
-
-* Ensure all dependencies are installed.
-* Verify the `data/` folder exists with the required CSV files.
-* Run the server manually to see any errors:
-
-```bash
-python server.py
-```
-
----
-
-## License
-
-MIT License
-
----
+**Tools return errors.** Check that the endpoint is reachable:
+`curl 'https://sosuse.correlaid.org/directory/sparql?query=ASK%20%7B%7D'` should return
+`{"head":{},"boolean":true}` (or similar).
 
 ## Contributing
 
-1. Fork the repository.
-2. Create a feature branch.
-3. Commit your changes.
-4. Push to the branch.
-5. Open a Pull Request.
+Work on a feature branch and open a pull request against `main`. CI runs the offline tests
+on every push. To add a tool, follow "Adding a query-backed tool" in
+[QUERIES.md](QUERIES.md) and "Testing a new feature" in [TEST.md](TEST.md).
 
----
+## License
+
+MIT

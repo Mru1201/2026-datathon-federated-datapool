@@ -7,7 +7,7 @@ case), so a red test tells you where to look without a debugger.
 | Layer | Folder | Needs | Runs in CI |
 |---|---|---|---|
 | 1. Unit (incl. SPARQL parity) | `tests/unit/` | nothing (offline, rdflib) | every push/PR (hosted runner) |
-| 2. MCP protocol | `tests/protocol/` | nothing (offline: tools read `directory.ttl`) | every push/PR (hosted runner) |
+| 2. MCP protocol | `tests/protocol/` | nothing (offline: tools read `data/directory.ttl`) | every push/PR (hosted runner) |
 | 3. SPARQL API | `tests/api/` | live SPARQL endpoint (skipped if unreachable) | **manual** (hosted runner) |
 | 4. Connection smoke | `tests/llm/` | Open WebUI + API key | manual (self-hosted runner) |
 | 5. Tool-calling evals | `tests/evals/` | Open WebUI + API key | manual (self-hosted runner) |
@@ -15,8 +15,8 @@ case), so a red test tells you where to look without a debugger.
 ## Running
 
 ```bash
-conda activate mcp
-pip install -r requirements-dev.txt          # once
+conda activate awo-mcp                        # or your virtualenv (see README.md)
+pip install -r requirements.txt -r requirements-dev.txt   # once
 
 pytest -m "not llm and not api"               # layers 1+2, offline, ~8 s, 0 requests (what CI runs on push)
 pytest -m "not llm"                           # layers 1-3, ~1 min, ~47 requests to the SPARQL endpoint
@@ -78,7 +78,7 @@ the code under test. Edge cases use tiny synthetic datasets (`tests/helpers.py:m
 
 ### `test_sparql_parity.py` – new SPARQL queries vs. old CSV logic
 
-Offline, no network. **Source: `directory.ttl`** (the RDF export of the directory, same
+Offline, no network. **Source: `data/directory.ttl`** (the RDF export of the directory, same
 vocabulary as the live endpoint), loaded into an in-memory rdflib graph
 (`tests/helpers.py:load_graph`). Both implementations get exactly the same data:
 
@@ -158,7 +158,7 @@ same data (e.g. phone numbers lost their leading 0), and two facilities differ.
 
 Talks to the real `server.py` through an in-memory MCP client (plus one stdio launch).
 **Offline:** `tests/protocol/conftest.py` swaps the server's SPARQL client for
-`LocalSparqlClient` on `directory.ttl`, so every tool runs its real `.rq` queries without
+`LocalSparqlClient` on `data/directory.ttl`, so every tool runs its real `.rq` queries without
 any request to the endpoint. The stdio launch only lists tools, so it sends no queries either.
 This layer checks the MCP plumbing. Whether the results are correct is checked in layer 1
 (parity) and layer 3 (live).
@@ -181,7 +181,8 @@ This layer checks the MCP plumbing. Whether the results are correct is checked i
 Integration tests: real `.rq` files, real `SparqlClient`, the live endpoint
 (`$SPARQL_ENDPOINT`) and the real MCP server. API, naming schema and limits are explained in
 `QUERIES.md`. All tests are marked `api` and are **skipped** if an `ASK {}` probe fails.
-They run only when triggered by hand (`.github/workflows/live-api.yml` or `pytest -m api tests`). The live data is the whole federated directory (~37k facilities, all providers),
+They run only when triggered by hand (`.github/workflows/live-api.yml` or `pytest -m api tests`).
+The live data is the whole federated directory (~37k facilities, all providers),
 so numbers differ from the AWO CSVs. These tests therefore check consistency, not fixed
 numbers.
 
@@ -190,7 +191,8 @@ To keep the load on the public endpoint low, each query is sent **once per test 
 of every (tool, arguments) MCP call. The protocol layer shares these results. A full run
 of layers 2 and 3 sends about 47 requests, one at a time (~50 s; before caching it was
 115 requests and ~2 min). Each heavy query (completeness, statistics, duplicates) runs
-twice: once inside the MCP server and once in the test client to compare against. Reference counts come from a differently shaped query
+twice: once inside the MCP server and once in the test client to compare against.
+Reference counts come from a differently shaped query
 (`list_facility_cities_by_city_substring.rq`: broad substring match, exact city match done
 in Python).
 

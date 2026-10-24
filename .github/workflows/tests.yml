@@ -1,7 +1,7 @@
 name: Tests
 
 # Fast, deterministic tests on GitHub-hosted runners (no LLM, no secrets, no network:
-# the MCP protocol tests read directory.ttl). The live SPARQL tests are in live-api.yml.
+# the MCP protocol tests read data/directory.ttl). The live SPARQL tests are in live-api.yml.
 on:
   push:
   pull_request:

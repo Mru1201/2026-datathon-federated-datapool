@@ -1,6 +1,6 @@
 """SPARQL tools vs. the old CSV logic: do the new queries do exactly the same thing?
 
-Offline, no network. The source is RDF: directory.ttl (or a small Turtle snippet for edge
+Offline, no network. The source is RDF: data/directory.ttl (or a small Turtle snippet for edge
 cases), loaded into an in-memory rdflib graph. Both implementations get the same data:
 
 * new: the real .rq files in sparql_queries/ run on the graph (LocalSparqlClient)

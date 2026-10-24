@@ -1,3 +1,9 @@
+"""SPARQL client for the federated directory of social support services (SoSuSe).
+
+Every query lives in its own file in sparql_queries/; load_query() fills its {{placeholders}}
+and SparqlClient runs it and shapes the rows into the result of one MCP tool. See QUERIES.md.
+"""
+
 import json
 import os
 import re
@@ -19,7 +25,9 @@ NAMESPACES = {
     "cdf:": "https://civic-data.de/federated-directory#",
 }
 
-# Dataset name -> RDF class and columns (same columns as the CSVs in data/).
+# Dataset name -> RDF class, duplicates query and the columns that completeness and
+# duplicate checks look at. The column lists are the headers of the original CSV export
+# in data/ (kept in sync by tests/unit/test_sparql_parity.py).
 DATASETS = {
     "einrichtung": {
         "class": "org:OrganizationalUnit",
@@ -56,6 +64,7 @@ DATASETS = {
         "columns": ["iri", "schema:name", "foaf:homepage", "schema:address"],
     },
 }
+
 
 def escape_literal(value: str) -> str:
     """Escape a Python string for use inside a double-quoted SPARQL literal."""
@@ -105,6 +114,12 @@ def rows(result: dict) -> list[dict]:
         }
         for binding in result["results"]["bindings"]
     ]
+
+
+def percentage(part: int, whole: int) -> float:
+    """part / whole in percent, rounded to 2 decimals (0.0 when whole is 0)."""
+
+    return round(part / whole * 100, 2) if whole else 0.0
 
 
 def to_float(value: str | None) -> float | None:
@@ -305,51 +320,25 @@ class SparqlClient:
 
             for column in dataset["columns"]:
                 if column == "iri":
-                    missing_count = 0
+                    missing = 0
                 else:
-                    missing_count = total_rows - filled.get(
-                        (class_iri, expand(column)), 0
-                    )
-
-                if total_rows > 0:
-                    missing_percentage = (
-                        missing_count / total_rows
-                    ) * 100
-                else:
-                    missing_percentage = 0.0
+                    missing = total_rows - filled.get((class_iri, expand(column)), 0)
 
                 columns[column] = {
                     "total": total_rows,
-                    "missing": missing_count,
-                    "missing_percentage": round(
-                        missing_percentage,
-                        2,
-                    ),
+                    "missing": missing,
+                    "missing_percentage": percentage(missing, total_rows),
                 }
 
             total_cells = total_rows * len(dataset["columns"])
-
-            total_missing = sum(
-                column_info["missing"]
-                for column_info in columns.values()
-            )
-
-            if total_cells > 0:
-                overall_missing_percentage = (
-                    total_missing / total_cells
-                ) * 100
-            else:
-                overall_missing_percentage = 0.0
+            total_missing = sum(column["missing"] for column in columns.values())
 
             completeness[dataset_name] = {
                 "rows": total_rows,
                 "columns": len(dataset["columns"]),
                 "total_cells": total_cells,
                 "missing_cells": total_missing,
-                "missing_percentage": round(
-                    overall_missing_percentage,
-                    2,
-                ),
+                "missing_percentage": percentage(total_missing, total_cells),
                 "columns_detail": columns,
             }
 
@@ -378,11 +367,7 @@ class SparqlClient:
             "services_by_audience": self.value_counts("count_services_per_audience"),
         }
 
-    def compare_facilities(
-        self,
-        facility_1: str,
-        facility_2: str,
-    ) -> list[dict]:
+    def compare_facilities(self, facility_1: str, facility_2: str) -> list[dict]:
         """Compare two facilities by name."""
 
         return [

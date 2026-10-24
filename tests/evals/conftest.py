@@ -2,7 +2,6 @@
 
 import json
 import os
-from pathlib import Path
 
 import pytest
 
@@ -26,18 +25,16 @@ def resolve_models(config) -> list[str]:
 def pytest_generate_tests(metafunc):
     if "model" not in metafunc.fixturenames:
         return
+    reason = "no models"
     try:
         models = resolve_models(metafunc.config)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - any failure means "cannot reach Open WebUI"
         models = []
         reason = f"cannot list models from Open WebUI ({exc!r}); check .env"
-    if not models:
-        metafunc.parametrize(
-            "model",
-            [pytest.param(None, marks=pytest.mark.skip(reason=locals().get("reason", "no models")))],
-        )
-    else:
+    if models:
         metafunc.parametrize("model", models)
+    else:
+        metafunc.parametrize("model", [pytest.param(None, marks=pytest.mark.skip(reason=reason))])
 
 
 def _matrix(results) -> tuple[list[str], list[str], dict]:
