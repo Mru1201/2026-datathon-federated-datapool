@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.dashboard.plugin import note
 from tests.evals import openwebui
 from tests.evals.conftest import RESULTS
 
@@ -37,8 +38,12 @@ def test_tool_calling(request, client, tools, model, case):
     runs = request.config.getoption("--runs")
     threshold = request.config.getoption("--pass-threshold")
 
-    results = [openwebui.run_case(client, model, case, i + 1, tools) for i in range(runs)]
+    results = []
+    for i in range(runs):
+        note(f"run {i + 1}/{runs} · {model}")
+        results.append(openwebui.run_case(client, model, case, i + 1, tools))
     RESULTS.extend(results)
+    request.node.user_properties.append(("eval_runs", [r.__dict__ for r in results]))
 
     passed = sum(r.passed for r in results)
     if passed / runs < threshold:
