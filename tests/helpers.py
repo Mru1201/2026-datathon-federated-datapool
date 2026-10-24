@@ -52,27 +52,53 @@ def _server():
     return server.mcp
 
 
+async def _run_with_client(fn):
+    """Wire an in-process MCP client to the real server and call fn(client)."""
+    import anyio
+    from mcp import ClientSession
+    from mcp.shared.memory import create_client_server_memory_streams
+
+    mcp_server = _server()._mcp_server
+    # Store result outside the task group so cancellation doesn't swallow it.
+    result_store: list = []
+
+    async with create_client_server_memory_streams() as (client_streams, server_streams):
+        read_client, write_client = client_streams
+        read_server, write_server = server_streams
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(
+                mcp_server.run,
+                read_server,
+                write_server,
+                mcp_server.create_initialization_options(),
+            )
+            async with ClientSession(read_client, write_client) as session:
+                await session.initialize()
+                result_store.append(await fn(session))
+                tg.cancel_scope.cancel()
+
+    return result_store[0]
+
+
 def mcp_list_tools():
-    from mcp.shared.memory import create_connected_server_and_client_session as connect
-
     async def run():
-        async with connect(_server()._mcp_server) as client:
-            return (await client.list_tools()).tools
+        return await _run_with_client(lambda s: s.list_tools())
 
-    return asyncio.run(run())
+    return asyncio.run(run()).tools
 
 
 def mcp_call(name: str, arguments: dict | None = None) -> tuple[bool, str]:
     """Call a tool on the real server in-process. Returns (is_error, text)."""
-    from mcp.shared.memory import create_connected_server_and_client_session as connect
-
     async def run():
-        async with connect(_server()._mcp_server) as client:
-            result = await client.call_tool(name, arguments or {})
-            text = "".join(
-                part.text for part in result.content if getattr(part, "text", None)
-            )
-            return result.isError, text
+        async def call(session):
+            return await session.call_tool(name, arguments or {})
+
+        result = await _run_with_client(call)
+        text = "".join(
+            part.text for part in result.content if getattr(part, "text", None)
+        )
+        return result.isError, text
 
     return asyncio.run(run())
 

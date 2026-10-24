@@ -1,0 +1,16 @@
+{
+  "results": {
+    "bindings": [
+      {
+        "facility":   { "type": "uri",     "value": "https://civic-data.de/federated-directory#org-abc123" },
+        "name":       { "type": "literal", "value": "AWO Beratungsstelle Mitte" },
+        "street":     { "type": "literal", "value": "Müllerstraße 1" },
+        "postalCode": { "type": "literal", "value": "10115" },
+        "city":       { "type": "literal", "value": "Berlin" },
+        "telephone":  { "type": "literal", "value": "+49 30 12345678" },
+        "email":      { "type": "literal", "value": "info@awo-mitte.de" },
+        "homepage":   { "type": "literal", "value": "https://www.awo-mitte.de" }
+      }
+    ]
+  }
+}

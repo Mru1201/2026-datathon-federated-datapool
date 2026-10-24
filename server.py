@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 
 import pandas as pd
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 from src.data_loader import DataLoader
 from src.data_repository import DataRepository

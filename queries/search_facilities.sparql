@@ -1,0 +1,18 @@
+PREFIX schema: <http://schema.org/>
+PREFIX org:    <http://www.w3.org/ns/org#>
+PREFIX foaf:   <http://xmlns.com/foaf/0.1/>
+
+SELECT DISTINCT ?facility ?name ?street ?postalCode ?city ?telephone ?email ?homepage
+WHERE {
+  ?facility a org:OrganizationalUnit ;
+            schema:name ?name ;
+            schema:address ?addr .
+  ?addr schema:addressLocality ?city .
+  FILTER(LCASE(STR(?city)) = LCASE("{{city}}"))
+  OPTIONAL { ?addr schema:streetAddress ?street }
+  OPTIONAL { ?addr schema:postalCode ?postalCode }
+  OPTIONAL { ?facility schema:telephone ?telephone }
+  OPTIONAL { ?facility schema:email ?email }
+  OPTIONAL { ?facility foaf:homepage ?homepage }
+}
+ORDER BY ?name
