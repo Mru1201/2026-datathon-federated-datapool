@@ -53,26 +53,52 @@ def _server():
 
 
 def mcp_list_tools():
-    from mcp.shared.memory import create_connected_server_and_client_session as connect
+    from mcp.shared.memory import create_client_server_memory_streams
+    from mcp import ClientSession
+    import anyio
 
     async def run():
-        async with connect(_server()._mcp_server) as client:
-            return (await client.list_tools()).tools
+        result_store: list = []
+        lowlevel = _server()._lowlevel_server
+        async with create_client_server_memory_streams() as (client_streams, server_streams):
+            read_client, write_client = client_streams
+            read_server, write_server = server_streams
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(lowlevel.run, read_server, write_server,
+                              lowlevel.create_initialization_options())
+                async with ClientSession(read_client, write_client) as session:
+                    await session.initialize()
+                    result_store.append((await session.list_tools()).tools)
+                    tg.cancel_scope.cancel()
+        return result_store[0]
 
     return asyncio.run(run())
 
 
 def mcp_call(name: str, arguments: dict | None = None) -> tuple[bool, str]:
     """Call a tool on the real server in-process. Returns (is_error, text)."""
-    from mcp.shared.memory import create_connected_server_and_client_session as connect
+    from mcp.shared.memory import create_client_server_memory_streams
+    from mcp import ClientSession
+    import anyio
 
     async def run():
-        async with connect(_server()._mcp_server) as client:
-            result = await client.call_tool(name, arguments or {})
-            text = "".join(
-                part.text for part in result.content if getattr(part, "text", None)
-            )
-            return result.isError, text
+        result_store: list = []
+        lowlevel = _server()._lowlevel_server
+        async with create_client_server_memory_streams() as (client_streams, server_streams):
+            read_client, write_client = client_streams
+            read_server, write_server = server_streams
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(lowlevel.run, read_server, write_server,
+                              lowlevel.create_initialization_options())
+                async with ClientSession(read_client, write_client) as session:
+                    await session.initialize()
+                    result = await session.call_tool(name, arguments or {})
+                    text = "".join(
+                        part.text for part in result.content if getattr(part, "text", None)
+                    )
+                    result_store.append((result.is_error, text))
+                    tg.cancel_scope.cancel()
+        return result_store[0]
 
     return asyncio.run(run())
 

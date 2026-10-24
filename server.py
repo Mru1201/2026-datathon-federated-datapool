@@ -7,7 +7,7 @@ sparql_queries/ against the live SPARQL endpoint. Run with `python server.py` (s
 import json
 import sys
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from src.sparql_client import SparqlClient
 

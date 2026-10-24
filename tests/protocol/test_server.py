@@ -59,8 +59,8 @@ def test_tool_metadata_is_llm_friendly(tools, tool):
         f"tool '{tool}' needs a real docstring (>= 20 chars): the LLM chooses tools "
         f"from it. Got: {t.description!r}"
     )
-    schema = t.inputSchema
-    assert schema.get("type") == "object", f"'{tool}' inputSchema.type is {schema.get('type')!r}"
+    schema = t.input_schema
+    assert schema.get("type") == "object", f"'{tool}' input_schema.type is {schema.get('type')!r}"
     props = schema.get("properties", {})
     unknown = [r for r in schema.get("required", []) if r not in props]
     assert not unknown, f"'{tool}' requires {unknown} but does not define them in properties"
