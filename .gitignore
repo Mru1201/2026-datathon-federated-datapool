@@ -22,3 +22,7 @@ Thumbs.db
 
 # Environment variables
 .env
+
+# Eval reports
+reports/
+.venv-ci/
