@@ -1,0 +1,25 @@
+# List all provider organisations with name, homepage and address.
+# Params: (none)
+# Used by: SparqlClient.list_providers -> MCP tool list_providers
+PREFIX schema: <http://schema.org/>
+PREFIX foaf:   <http://xmlns.com/foaf/0.1/>
+
+SELECT DISTINCT ?provider
+       (SAMPLE(?name_) AS ?name)
+       (SAMPLE(?homepage_) AS ?homepage)
+       (SAMPLE(?street_) AS ?street)
+       (SAMPLE(?postal_code_) AS ?postal_code)
+       (SAMPLE(?city_) AS ?city)
+WHERE {
+  ?provider a schema:Organization ;
+            schema:name ?name_ .
+  OPTIONAL { ?provider foaf:homepage ?homepage_ }
+  OPTIONAL {
+    ?provider schema:address ?addr .
+    OPTIONAL { ?addr schema:streetAddress ?street_ }
+    OPTIONAL { ?addr schema:postalCode ?postal_code_ }
+    OPTIONAL { ?addr schema:addressLocality ?city_ }
+  }
+}
+GROUP BY ?provider
+ORDER BY ?name

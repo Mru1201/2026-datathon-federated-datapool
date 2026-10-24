@@ -25,6 +25,8 @@ SMOKE_ARGS = {
     "check_completeness": {},
     "generate_statistics": {},
     "compare_facilities": {"facility_1": "Drehscheibe", "facility_2": "Metropolitankapitel"},
+    "list_providers": {},
+    "search_by_postal_code": {"postal_code": "10115"},
 }
 JSON_TOOLS = [t for t in SMOKE_ARGS if t != "count_facilities"]
 
