@@ -1,4 +1,4 @@
-from src.data_loader import DataLoader
+from src.legacy.data_loader import DataLoader
 
 
 loader = DataLoader("data")

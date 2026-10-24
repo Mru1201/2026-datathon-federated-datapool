@@ -184,8 +184,11 @@ awo-mcp-production/
 │   ├── angebotSchema.csv
 │   └── traegerSchema.csv
 ├── src/                       # Core modules
-│   ├── data_loader.py
-│   └── data_repository.py
+│   ├── sparql_client.py       # SPARQL client used by all tools (see QUERIES.md)
+│   └── legacy/                # old CSV implementation, reference for parity tests
+│       ├── data_loader.py
+│       └── data_repository.py
+├── sparql_queries/            # one .rq file per query
 ├── server.py                  # MCP server
 ├── requirements.txt
 └── README.md

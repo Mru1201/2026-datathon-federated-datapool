@@ -28,7 +28,7 @@ def make_repo(einrichtung=(), adresse=(), angebot=(), traeger=()):
 
     Rows are dicts; columns not given are NaN. Column names come from the real CSVs.
     """
-    from src.data_repository import DataRepository
+    from src.legacy.data_repository import DataRepository
 
     given = {
         "einrichtung": einrichtung,
@@ -86,7 +86,10 @@ def mcp_call_once(name: str, arguments: dict | None = None) -> tuple[bool, str]:
     The tools are read-only queries against the live endpoint; several tests check the
     same call's output, so they share one result instead of re-sending heavy queries.
     """
-    key = (name, json.dumps(arguments or {}, sort_keys=True))
+    import server
+
+    # The protocol layer swaps in an offline client; keep its results apart from live ones.
+    key = (server.sparql.endpoint, name, json.dumps(arguments or {}, sort_keys=True))
     if key not in _MCP_RESULTS:
         _MCP_RESULTS[key] = mcp_call(name, arguments)
     return _MCP_RESULTS[key]
@@ -192,7 +195,7 @@ def make_sources(turtle: str | None = None):
     The client runs the real .rq files on the graph; the old CSV code gets the tables
     derived from the same graph (graph_to_frames).
     """
-    from src.data_repository import DataRepository
+    from src.legacy.data_repository import DataRepository
 
     graph = load_graph(turtle)
     return DataRepository(graph_to_frames(graph)), LocalSparqlClient(graph)

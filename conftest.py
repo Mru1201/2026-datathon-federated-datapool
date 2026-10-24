@@ -65,13 +65,13 @@ def data_dir() -> Path:
 
 @pytest.fixture(scope="session")
 def datasets(data_dir):
-    from src.data_loader import DataLoader
+    from src.legacy.data_loader import DataLoader
 
     return DataLoader(data_dir).load_all()
 
 
 @pytest.fixture(scope="session")
 def repository(datasets):
-    from src.data_repository import DataRepository
+    from src.legacy.data_repository import DataRepository
 
     return DataRepository(datasets)

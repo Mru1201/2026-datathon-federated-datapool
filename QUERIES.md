@@ -122,7 +122,7 @@ All lower snake case. Each file starts with a header comment:
 ```
 
 Apart from placeholders, files are plain SPARQL and can be pasted into the endpoint's
-query UI. `test_query_files_follow_naming_convention` in `tests/api/test_sparql.py` fails
+query UI. `test_query_files_follow_naming_convention` in `tests/unit/test_query_files.py` fails
 for any `.rq` file that breaks the schema, takes a `{{param}}` its name does not mention,
 is named `_per_` without a `GROUP BY`, or lacks the header.
 

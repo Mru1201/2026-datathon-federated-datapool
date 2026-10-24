@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.data_loader import DataLoader
+from src.legacy.data_loader import DataLoader
 from tests.helpers import CSV_FILES, raw_rows
 
 REQUIRED_COLUMNS = {
@@ -24,7 +24,7 @@ REQUIRED_COLUMNS = {
 def test_load_all_returns_four_datasets(datasets):
     assert set(datasets) == set(CSV_FILES), (
         f"DataLoader.load_all() returned keys {sorted(datasets)}, "
-        f"expected {sorted(CSV_FILES)} (src/data_loader.py: load_all)"
+        f"expected {sorted(CSV_FILES)} (src/legacy/data_loader.py: load_all)"
     )
 
 
@@ -43,7 +43,7 @@ def test_required_columns_present(datasets, name):
     missing = [c for c in REQUIRED_COLUMNS[name] if c not in datasets[name].columns]
     assert not missing, (
         f"dataset '{name}' is missing column(s) {missing} that "
-        f"src/data_repository.py reads; CSV columns: {list(datasets[name].columns)}"
+        f"src/legacy/data_repository.py reads; CSV columns: {list(datasets[name].columns)}"
     )
 
 
@@ -61,7 +61,7 @@ def test_umlauts_survive_loading(datasets):
     names = " ".join(datasets["einrichtung"]["schema:name"].dropna())
     assert "Lübecker" in names, (
         "expected the facility name containing 'Lübecker' in einrichtung; "
-        "umlauts are probably being mangled (encoding problem in data_loader.py)"
+        "umlauts are probably being mangled (encoding problem in src/legacy/data_loader.py)"
     )
 
 

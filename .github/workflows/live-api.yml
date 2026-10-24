@@ -1,0 +1,29 @@
+name: Live SPARQL API tests
+
+# Runs tests/api/ against the public SPARQL endpoint (~47 requests, ~1 min).
+# Manual trigger only, so pushes and PRs never put load on the endpoint.
+on:
+  workflow_dispatch:
+    inputs:
+      endpoint:
+        description: "SPARQL endpoint"
+        default: "https://sosuse.correlaid.org/directory/sparql"
+
+jobs:
+  live-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SPARQL_ENDPOINT: ${{ inputs.endpoint }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Live SPARQL API tests
+        run: pytest -m api tests

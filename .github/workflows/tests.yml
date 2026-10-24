@@ -1,6 +1,7 @@
 name: Tests
 
-# Fast, deterministic tests on GitHub-hosted runners (no LLM, no secrets).
+# Fast, deterministic tests on GitHub-hosted runners (no LLM, no secrets, no network:
+# the MCP protocol tests read directory.ttl). The live SPARQL tests are in live-api.yml.
 on:
   push:
   pull_request:
@@ -18,5 +19,5 @@ jobs:
             requirements.txt
             requirements-dev.txt
       - run: pip install -r requirements.txt -r requirements-dev.txt
-      - name: Unit + MCP protocol tests
-        run: pytest -m "not llm" tests
+      - name: Unit + MCP protocol tests (offline)
+        run: pytest -m "not llm and not api" tests

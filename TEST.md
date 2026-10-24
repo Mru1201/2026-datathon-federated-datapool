@@ -7,8 +7,8 @@ case), so a red test tells you where to look without a debugger.
 | Layer | Folder | Needs | Runs in CI |
 |---|---|---|---|
 | 1. Unit (incl. SPARQL parity) | `tests/unit/` | nothing (offline, rdflib) | every push/PR (hosted runner) |
-| 2. MCP protocol | `tests/protocol/` | SPARQL endpoint (all tools query it) | every push/PR (hosted runner) |
-| 3. SPARQL API | `tests/api/` | SPARQL endpoint (live tests skip if unreachable) | every push/PR (hosted runner) |
+| 2. MCP protocol | `tests/protocol/` | nothing (offline: tools read `directory.ttl`) | every push/PR (hosted runner) |
+| 3. SPARQL API | `tests/api/` | live SPARQL endpoint (skipped if unreachable) | **manual** (hosted runner) |
 | 4. Connection smoke | `tests/llm/` | Open WebUI + API key | manual (self-hosted runner) |
 | 5. Tool-calling evals | `tests/evals/` | Open WebUI + API key | manual (self-hosted runner) |
 
@@ -18,10 +18,10 @@ case), so a red test tells you where to look without a debugger.
 conda activate mcp
 pip install -r requirements-dev.txt          # once
 
+pytest -m "not llm and not api"               # layers 1+2, offline, ~8 s, 0 requests (what CI runs on push)
 pytest -m "not llm"                           # layers 1-3, ~1 min, ~47 requests to the SPARQL endpoint
-pytest tests/unit                             # layer 1 only, offline, ~10 s (incl. SPARQL parity)
 pytest tests/unit/test_sparql_parity.py       # new queries vs. old CSV logic, offline
-pytest tests/api                              # layer 3 only: every tool against the live endpoint
+pytest -m api tests                           # layer 3 only: every tool against the live endpoint
 pytest -m llm tests/llm                       # is Open WebUI/Ollama reachable?
 pytest -m llm tests/evals                     # default model (OPENWEBUI_MODEL or first listed)
 pytest -m llm tests/evals --models qwen3:8b,gemma4:12b --runs 3 --pass-threshold 0.67
@@ -56,7 +56,7 @@ pytest --no-dashboard           # off (also off automatically when $CI is set)
 ## Layer 1 – Unit tests (`tests/unit/`)
 
 All MCP tools now read the live SPARQL API (`src/sparql_client.py`, see `QUERIES.md`).
-The old CSV implementation (`DataLoader` + `DataRepository`) is no longer used by
+The old CSV implementation (`DataLoader` + `DataRepository` in `src/legacy/`) is no longer used by
 `server.py`. It stays as the **reference implementation**: `test_sparql_parity.py` checks
 that every new query does exactly what the old CSV code did, and `test_loader.py` /
 `test_repository.py` keep that reference correct.
@@ -69,7 +69,7 @@ the code under test. Edge cases use tiny synthetic datasets (`tests/helpers.py:m
 |---|---|
 | `test_load_all_returns_four_datasets` | keys are exactly einrichtung, adresse, angebot, traeger |
 | `test_row_count_matches_csv` (×4) | loaded rows == rows in the CSV file (nothing lost/added) |
-| `test_required_columns_present` (×4) | columns that `data_repository.py` reads exist |
+| `test_required_columns_present` (×4) | columns that `src/legacy/data_repository.py` reads exist |
 | `test_iri_is_unique_and_filled` (×4) | `iri` never empty, never duplicated |
 | `test_umlauts_survive_loading` | "Lübecker" is intact (encoding) |
 | `test_missing_directory_raises_clear_error` | missing data dir → `FileNotFoundError` naming the CSV |
@@ -117,6 +117,15 @@ same data (e.g. phone numbers lost their leading 0), and two facilities differ.
 | `test_multi_valued_contacts_are_joined` | RDF allows several emails per facility (a CSV cell cannot): all are returned, joined with "; "; `graph_to_frames` refuses such data |
 | `test_escape_literal_used_for_every_placeholder` | placeholder values are escaped in every query |
 
+### `test_query_files.py` – query files and query building
+
+| Test | Checks |
+|---|---|
+| `test_escape_literal_escapes_quotes_and_backslashes` | quotes, backslashes and newlines are escaped for a SPARQL string literal |
+| `test_load_query_embeds_escaped_city` | `load_query` fills `{{city}}` in `count_facilities_by_city.rq` with the escaped value |
+| `test_load_query_without_required_param_raises` | a missing placeholder value raises `ValueError` naming the parameter |
+| `test_query_files_follow_naming_convention` (×1 per `.rq` file) | name matches `<action>_<entity>[_by_<param>][_per_<group>].rq`; every `{{param}}` is named after `_by_`; `_per_` queries use `GROUP BY`; `# Params:` and `# Used by:` header present |
+
 ### `test_repository.py` – `DataRepository` (reference implementation)
 | Test | Checks |
 |---|---|
@@ -148,8 +157,11 @@ same data (e.g. phone numbers lost their leading 0), and two facilities differ.
 ## Layer 2 – MCP protocol tests (`tests/protocol/test_server.py`)
 
 Talks to the real `server.py` through an in-memory MCP client (plus one stdio launch).
-All tools query the live SPARQL endpoint, so the smoke calls need network access. Whether
-the results are correct is checked in layer 1 (parity) and layer 3 (live).
+**Offline:** `tests/protocol/conftest.py` swaps the server's SPARQL client for
+`LocalSparqlClient` on `directory.ttl`, so every tool runs its real `.rq` queries without
+any request to the endpoint. The stdio launch only lists tools, so it sends no queries either.
+This layer checks the MCP plumbing. Whether the results are correct is checked in layer 1
+(parity) and layer 3 (live).
 
 | Test | Checks |
 |---|---|
@@ -168,8 +180,8 @@ the results are correct is checked in layer 1 (parity) and layer 3 (live).
 
 Integration tests: real `.rq` files, real `SparqlClient`, the live endpoint
 (`$SPARQL_ENDPOINT`) and the real MCP server. API, naming schema and limits are explained in
-`QUERIES.md`. The first five tests run offline. The rest are **skipped** if an `ASK {}`
-probe fails. The live data is the whole federated directory (~37k facilities, all providers),
+`QUERIES.md`. All tests are marked `api` and are **skipped** if an `ASK {}` probe fails.
+They run only when triggered by hand (`.github/workflows/live-api.yml` or `pytest -m api tests`). The live data is the whole federated directory (~37k facilities, all providers),
 so numbers differ from the AWO CSVs. These tests therefore check consistency, not fixed
 numbers.
 
@@ -184,10 +196,6 @@ in Python).
 
 | Test | Checks |
 |---|---|
-| `test_escape_literal_escapes_quotes_and_backslashes` | quotes, backslashes and newlines are escaped for a SPARQL string literal |
-| `test_load_query_embeds_escaped_city` | `load_query` fills `{{city}}` in `count_facilities_by_city.rq` with the escaped value |
-| `test_load_query_without_required_param_raises` | a missing placeholder value raises `ValueError` naming the parameter |
-| `test_query_files_follow_naming_convention` (×1 per `.rq` file) | name matches `<action>_<entity>[_by_<param>][_per_<group>].rq`; every `{{param}}` is named after `_by_`; `_per_` queries use `GROUP BY`; `# Params:` and `# Used by:` header present |
 | `test_count_matches_independent_query` (×3) | Berlin, München, Köln: `count_facilities` == count from the reference query (and > 0) |
 | `test_city_match_is_case_insensitive` | Berlin/berlin/BERLIN give the same count |
 | `test_unknown_city_returns_zero` | unknown city → 0 |
@@ -248,7 +256,10 @@ Cases (`tests/evals/cases.json`): `count-berlin`, `search-facilities-berlin`,
 
 ## CI
 
-* `.github/workflows/tests.yml` – layers 1–3 on every push/PR, GitHub-hosted, free.
+* `.github/workflows/tests.yml` – layers 1+2 on every push/PR, GitHub-hosted, free,
+  **offline** (`pytest -m "not llm and not api"`: no request to the SPARQL endpoint).
+* `.github/workflows/live-api.yml` – layer 3, **manual** (Actions → "Live SPARQL API tests" →
+  Run workflow; the endpoint can be changed there). ~47 requests to the endpoint, one at a time.
 * `.github/workflows/llm-evals.yml` – layers 4+5, **manual** (Actions → "LLM evals" →
   Run workflow; choose models, runs, threshold). Runs on a self-hosted runner because
   Open WebUI is on `localhost`. Uploads `eval-report` as an artifact.
