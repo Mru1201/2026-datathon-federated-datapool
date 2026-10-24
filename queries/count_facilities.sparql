@@ -1,0 +1,10 @@
+PREFIX schema: <http://schema.org/>
+PREFIX org:    <http://www.w3.org/ns/org#>
+
+SELECT (COUNT(DISTINCT ?facility) AS ?count)
+WHERE {
+  ?facility a org:OrganizationalUnit ;
+            schema:address ?addr .
+  ?addr schema:addressLocality ?city .
+  FILTER(LCASE(STR(?city)) = LCASE("{{city}}"))
+}

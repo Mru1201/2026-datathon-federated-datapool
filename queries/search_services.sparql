@@ -1,0 +1,15 @@
+PREFIX schema: <http://schema.org/>
+
+SELECT DISTINCT ?service ?name ?category ?audience
+WHERE {
+  ?service a schema:Service .
+  OPTIONAL { ?service schema:name ?name }
+  OPTIONAL { ?service schema:category ?category }
+  OPTIONAL { ?service schema:audience ?audience }
+  FILTER(
+    CONTAINS(LCASE(COALESCE(STR(?name), "")),     LCASE("{{query}}"))
+    || CONTAINS(LCASE(COALESCE(STR(?category), "")), LCASE("{{query}}"))
+    || CONTAINS(LCASE(COALESCE(STR(?audience), "")), LCASE("{{query}}"))
+  )
+}
+ORDER BY ?name

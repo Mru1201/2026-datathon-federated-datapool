@@ -1,0 +1,16 @@
+PREFIX schema: <http://schema.org/>
+PREFIX foaf:   <http://xmlns.com/foaf/0.1/>
+
+SELECT DISTINCT ?provider ?name ?homepage ?street ?postalCode ?city
+WHERE {
+  ?provider a schema:Organization ;
+            schema:name ?name .
+  OPTIONAL { ?provider foaf:homepage ?homepage }
+  OPTIONAL {
+    ?provider schema:address ?addr .
+    OPTIONAL { ?addr schema:streetAddress ?street }
+    OPTIONAL { ?addr schema:postalCode ?postalCode }
+    OPTIONAL { ?addr schema:addressLocality ?city }
+  }
+}
+ORDER BY ?name

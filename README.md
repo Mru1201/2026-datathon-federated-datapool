@@ -255,6 +255,77 @@ python server.py
 
 ---
 
+---
+
+## Federated Welfare Directory MCP Server
+
+A second MCP server in this repo (`federated_server.py`) that queries the [Föderierter Datenpool](https://sosuse.correlaid.org) — a federated pool of German welfare data from Caritas, AWO, DHS, Sozialplattform, and Destatis (~37,000 facilities).
+
+Unlike the AWO server which reads local CSV files, this server queries a live public SPARQL endpoint and requires no local data files.
+
+### Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### Connect to Claude Code
+
+```bash
+claude mcp add federated-welfare python3 /path/to/awo-mcp-production/federated_server.py
+```
+
+### Connect to Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "federated-welfare": {
+      "command": "python3",
+      "args": ["/path/to/awo-mcp-production/federated_server.py"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop after saving.
+
+### Example queries
+
+**Find facilities by city**
+> "How many welfare facilities are in Berlin?"
+> "Show me welfare facilities in Hamburg"
+
+**Get facility details**
+> "Tell me about AWO Pflegegesellschaft"
+> "Find facilities in postal code 10115"
+
+**Search services**
+> "Find services related to Suchtberatung"
+> "What services are available for Senioren?"
+> "Find services for Kinder und Jugendliche"
+
+**Compare facilities**
+> "Compare AWO Mitte and Caritas Berlin"
+
+**Providers and statistics**
+> "List all provider organisations in the directory"
+> "Give me statistics about the welfare directory"
+
+### Configuration
+
+Copy `.env.example` to `.env` to override defaults:
+
+```
+SPARQL_ENDPOINT=https://sosuse.correlaid.org/directory/sparql
+CACHE_TTL=300
+LOG_LEVEL=INFO
+```
+
+---
+
 ## License
 
 MIT License

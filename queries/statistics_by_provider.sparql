@@ -1,0 +1,11 @@
+PREFIX schema: <http://schema.org/>
+PREFIX org:    <http://www.w3.org/ns/org#>
+
+SELECT ?providerName (COUNT(DISTINCT ?facility) AS ?count)
+WHERE {
+  ?facility a org:OrganizationalUnit ;
+            schema:parentOrganization ?provider .
+  ?provider schema:name ?providerName .
+}
+GROUP BY ?providerName
+ORDER BY DESC(?count)

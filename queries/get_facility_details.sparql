@@ -1,0 +1,34 @@
+PREFIX schema: <http://schema.org/>
+PREFIX org:    <http://www.w3.org/ns/org#>
+PREFIX foaf:   <http://xmlns.com/foaf/0.1/>
+
+SELECT DISTINCT
+  ?facility ?name ?alternateName ?telephone ?email ?homepage
+  ?category
+  ?street ?postalCode ?city ?country ?lat ?lon
+  ?providerIri ?providerName ?providerHomepage
+WHERE {
+  ?facility a org:OrganizationalUnit ;
+            schema:name ?name .
+  FILTER(CONTAINS(LCASE(STR(?name)), LCASE("{{name}}")))
+  OPTIONAL { ?facility schema:alternateName ?alternateName }
+  OPTIONAL { ?facility schema:telephone ?telephone }
+  OPTIONAL { ?facility schema:email ?email }
+  OPTIONAL { ?facility foaf:homepage ?homepage }
+  OPTIONAL { ?facility schema:category ?category }
+  OPTIONAL {
+    ?facility schema:address ?addr .
+    OPTIONAL { ?addr schema:streetAddress ?street }
+    OPTIONAL { ?addr schema:postalCode ?postalCode }
+    OPTIONAL { ?addr schema:addressLocality ?city }
+    OPTIONAL { ?addr schema:addressCountry ?country }
+    OPTIONAL { ?addr schema:latitude ?lat }
+    OPTIONAL { ?addr schema:longitude ?lon }
+  }
+  OPTIONAL {
+    ?facility schema:parentOrganization ?providerIri .
+    OPTIONAL { ?providerIri schema:name ?providerName }
+    OPTIONAL { ?providerIri foaf:homepage ?providerHomepage }
+  }
+}
+ORDER BY ?name
