@@ -1,0 +1,289 @@
+{
+  "schema_version": "1.0.0",
+  "core_required_tools": [
+    "search_social_services",
+    "find_nearby_services",
+    "get_facility_details",
+    "inspect_data_quality",
+    "sparql_query"
+  ],
+  "tools": [
+    {
+      "name": "search_social_services",
+      "description": "Search for social support services (Angebote) and facilities (Einrichtungen) across the Federated Data Pool by category, locality, postal code, target audience, provider organization, language, and accessibility attributes.",
+      "required_core": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ],
+            "description": "Service category or German welfare classification (e.g., 'Jugendberatung', 'Schuldnerberatung', 'Suchtberatung', 'Frauenhaus')."
+          },
+          "locality": {
+            "type": "string",
+            "description": "City or Berlin district/Bezirk (e.g., 'Berlin', 'Berlin-Mitte', 'Berlin-Neukölln')."
+          },
+          "postcode": {
+            "type": "string",
+            "description": "5-digit German postal code / PLZ (e.g., '10115', '10997')."
+          },
+          "audience": {
+            "type": "string",
+            "description": "Target demographic or group (e.g., 'Jugendliche', 'Geflüchtete / Kinder', 'Frauen', 'Senioren', 'Autism')."
+          },
+          "provider": {
+            "type": "string",
+            "description": "Parent welfare organization / Träger name (e.g., 'AWO', 'Caritas', 'Diakonie')."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language code or name supported by the service (e.g., 'tr', 'ar', 'uk', 'DGS', 'Amharic')."
+          },
+          "accessibility": {
+            "type": "string",
+            "description": "Accessibility requirement (e.g., 'rollstuhlgerecht', 'barrierefrei', 'screen-reader')."
+          },
+          "has_email": {
+            "type": "boolean",
+            "description": "Filter for facilities that have a verified contact email address."
+          },
+          "anonymous": {
+            "type": "boolean",
+            "description": "Filter for services offering anonymous intake or consultation."
+          },
+          "include_sublocalities": {
+            "type": "boolean",
+            "description": "Include sub-districts (Ortsteile) within a broader Bezirk."
+          },
+          "time": {
+            "type": "string",
+            "description": "Requested service time in HH:MM format (e.g., '03:00') to filter by opening hours."
+          },
+          "facility_name": {
+            "type": "string",
+            "description": "Specific facility name or substring to match."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "find_nearby_services",
+      "description": "Geospatial proximity search for social support facilities and services using coordinates (latitude/longitude), postal code, or landmark/locality within a specified radius.",
+      "required_core": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "description": "WGS84 latitude in decimal degrees (e.g., 52.5219)."
+          },
+          "lon": {
+            "type": "number",
+            "description": "WGS84 longitude in decimal degrees (e.g., 13.4132)."
+          },
+          "radius_km": {
+            "type": "number",
+            "description": "Search radius in kilometers."
+          },
+          "radius_m": {
+            "type": "number",
+            "description": "Search radius in meters."
+          },
+          "category": {
+            "type": "string",
+            "description": "Service category filter (e.g., 'Suchtberatung', 'Kita / Familienförderung')."
+          },
+          "locality": {
+            "type": "string",
+            "description": "Neighborhood or district name (e.g., 'Gesundbrunnen')."
+          },
+          "location": {
+            "type": "string",
+            "description": "Landmark or station name (e.g., 'Alexanderplatz')."
+          },
+          "postcode": {
+            "type": "string",
+            "description": "5-digit German postal code / PLZ for proximity center."
+          },
+          "accessibility": {
+            "type": "string",
+            "description": "Accessibility filter (e.g., 'screen-reader', 'rollstuhlgerecht')."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_facility_details",
+      "description": "Retrieve comprehensive metadata, contact details, address, opening hours, parent Träger, and linked services for a specific facility (Einrichtung) by IRI or name.",
+      "required_core": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "facility_name": {
+            "type": "string",
+            "description": "Exact or partial name of the facility (schema:name or schema:alternateName)."
+          },
+          "entity_id": {
+            "type": "string",
+            "description": "Unique IRI of the facility (e.g., 'https://civic-data.de/federated-directory#org-...')."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "inspect_data_quality",
+      "description": "Audit the Federated Data Pool schemas (einrichtungSchema, angebotSchema, adresseSchema, traegerSchema) for missing contact fields, orphaned foreign keys, or invalid geographic bounding boxes.",
+      "required_core": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "missing_fields": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of fields to check for null/missing values (e.g., ['phone', 'email', 'opening_hours'])."
+          },
+          "check_orphans": {
+            "type": "boolean",
+            "description": "If true, detect Angebot records whose schema:provider IRI does not exist in einrichtungSchema."
+          },
+          "check_bbox": {
+            "type": "boolean",
+            "description": "If true, detect Adresse records with latitude/longitude outside the Berlin bounding box."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "sparql_query",
+      "description": "Execute a read-only SPARQL 1.1 SELECT/ASK/CONSTRUCT query against the Federated Data Pool RDF graph (directory.ttl). Enforces a 30s timeout and recommends explicit LIMIT clauses.",
+      "required_core": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Valid SPARQL 1.1 query string."
+          }
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "check_opening_hours",
+      "description": "Check opening hours (schema:openingHours) for a facility and optionally verify if it is currently open.",
+      "required_core": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "facility_name": { "type": "string" },
+          "locality": { "type": "string" },
+          "check_current_time": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "search_facility_by_postcode",
+      "description": "Search facilities located in a specific 5-digit postal code (schema:postalCode).",
+      "required_core": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "postcode": { "type": "string" },
+          "category": { "type": "string" },
+          "audience": { "type": "string" }
+        },
+        "required": ["postcode"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "analyze_coverage_gaps",
+      "description": "Analyze service category coverage gaps across postal codes or districts for a given provider.",
+      "required_core": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "provider": { "type": "string" },
+          "category": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "audit_and_repair_localities",
+      "description": "Audit and infer missing district/locality labels from 5-digit postal codes in adresseSchema.",
+      "required_core": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "infer_from": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "detect_duplicate_entities",
+      "description": "Detect duplicate facilities or cross-source entity overlaps across federated data providers.",
+      "required_core": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "providers": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "resolve_entity_hierarchy",
+      "description": "Resolve parent-child entity relationships (Angebot -> Einrichtung -> Träger) and optionally inherit missing contact/address properties.",
+      "required_core": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "inherit_from_parent": { "type": "boolean" }
+        },
+        "required": ["entity_id"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "inspect_provenance_conflict",
+      "description": "Inspect conflicting attribute values across multiple federated data sources for a shared entity IRI.",
+      "required_core": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" }
+        },
+        "required": ["entity_id"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "read_resource",
+      "description": "Read an MCP resource URI exposed by the server (e.g., sosuse://schema/categories).",
+      "required_core": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "uri": { "type": "string" }
+        },
+        "required": ["uri"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

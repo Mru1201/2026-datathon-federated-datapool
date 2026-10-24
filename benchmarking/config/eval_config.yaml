@@ -1,0 +1,56 @@
+version: "1.0"
+suite_name: "DSSG Datathon 2026 - Federated Data Pool MCP Benchmark"
+dataset_path: "benchmarking/datasets/seed_eval_suite.jsonl"
+
+timeouts:
+  sparql_query_timeout_seconds: 30.0
+  mcp_tool_call_timeout_seconds: 15.0
+  mcp_connect_timeout_seconds: 10.0
+  mcp_sse_read_timeout_seconds: 300.0
+  llm_request_timeout_seconds: 60.0
+  end_to_end_test_timeout_seconds: 120.0
+
+concurrency:
+  max_concurrent_evals: 8
+  max_concurrent_per_provider:
+    openai: 5
+    anthropic: 4
+    google: 5
+    vllm: 2
+    ollama: 1
+  rate_limit_requests_per_minute: 60
+
+retry_policy:
+  max_retries: 3
+  initial_backoff_seconds: 1.0
+  max_backoff_seconds: 16.0
+  backoff_multiplier: 2.0
+  jitter: true
+  retry_on_status_codes: [408, 429, 500, 502, 503, 504]
+  retry_on_exceptions:
+    - "RateLimitError"
+    - "APIConnectionError"
+    - "Timeout"
+    - "ServiceUnavailableError"
+
+mcp_target:
+  default_transport: "stdio"
+  stdio:
+    command: "python"
+    args: ["server.py"]
+    cwd: "."
+  sse:
+    url: "http://localhost:8080/sse"
+  streamable_http:
+    url: "http://localhost:8080/mcp"
+
+grading:
+  precision_at_k: 3
+  strict_schema_validation: true
+  enforce_sparql_limit: true
+  max_sparql_limit: 100
+  berlin_bbox:
+    min_lat: 52.3382
+    max_lat: 52.6755
+    min_lon: 13.0883
+    max_lon: 13.7611

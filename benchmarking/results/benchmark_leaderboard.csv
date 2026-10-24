@@ -1,0 +1,8 @@
+Rank,Model_ID,Model_Name,Model_Tier,Sample_Size_N,Overall_Pass_Rate_%,Wald_95_CI_Margin_±%,Wilson_95_CI_Lower_%,Wilson_95_CI_Upper_%,Wilson_95_CI_HalfWidth_±%,Tool_Selection_Accuracy_%,Precision@3_%,Recall@3_%,Hierarchy_Inheritance_%,Zero_Result_Safety_Abstention_%,MCP_Timeout_&_Error_Recovery_%,Null_Contact_Hallucination_Rate_%,Context_Token_Efficiency_%,Production_Composite_Score_%,Avg_TTFT_ms,Avg_Latency_ms,P95_Latency_ms,Total_Tokens,Estimated_Cost_USD
+1,claude-3-5-sonnet,Claude 3.5 Sonnet,frontier,50,94.0,6.58,83.78,97.94,7.08,96.8,100.0,100.0,99.4,100.0,100.0,0.0,100.0,99.11,348.25,1055.68,1243.86,41306,0.223986
+2,gpt-4o,GPT-4o,frontier,50,90.0,8.32,78.64,95.65,8.51,97.1,100.0,100.0,99.4,100.0,100.0,4.0,100.0,98.79,286.65,892.42,1074.57,39823,0.157806
+3,gemini-1-5-pro,Gemini 1.5 Pro,frontier,50,86.0,9.62,73.81,93.05,9.62,93.8,100.0,100.0,99.4,100.0,100.0,4.0,100.0,97.96,415.34,1187.54,1390.96,42612,0.086173
+4,claude-3-5-haiku,Claude 3.5 Haiku,fast,50,80.0,11.09,66.96,88.76,10.9,90.4,96.0,96.0,99.4,96.0,100.0,2.0,100.0,95.91,199.95,594.81,697.08,40581,0.056794
+5,gpt-4o-mini,GPT-4o-mini,fast,50,76.0,11.84,62.59,85.7,11.56,92.0,96.0,96.0,98.0,96.0,100.0,10.0,100.0,95.3,181.56,552.32,651.89,39534,0.009189
+6,qwen-2-5-72b,Qwen 2.5 72B Instruct,local,50,64.0,13.3,50.14,75.86,12.86,85.9,98.0,98.0,95.8,98.0,100.0,16.0,100.0,93.55,459.61,1470.32,1744.84,43511,0.0
+7,llama-3-1-70b,Llama 3.1 70B Instruct,local,50,56.0,13.76,42.31,68.84,13.27,88.2,92.0,92.0,99.4,92.0,100.0,24.0,100.0,91.76,482.44,1541.98,1818.26,44257,0.0

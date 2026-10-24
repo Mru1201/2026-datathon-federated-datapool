@@ -1,0 +1,9 @@
+litellm
+pydantic
+mcp
+rich
+pyyaml
+pandas
+scipy
+duckdb
+openpyxl
