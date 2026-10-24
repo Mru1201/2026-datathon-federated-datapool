@@ -49,9 +49,12 @@ class DataRepository:
             )
         )
 
+        # Facilities without an address have no city: drop them rather
+        # than filling with "" (which would match an empty city query).
         return int(
             city_values
-            .fillna("")
+            .dropna()
+            .astype(str)
             .str.casefold()
             .eq(city.casefold())
             .sum()

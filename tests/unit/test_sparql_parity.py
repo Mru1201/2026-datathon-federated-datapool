@@ -233,12 +233,12 @@ def test_quote_in_input_stays_inside_the_literal():
 
 
 def test_empty_city_matches_nothing():
-    """Intentional fix: the CSV version counts facilities without an address for ""."""
+    """A facility without an address is in no city, so an empty city matches nothing."""
     repo, client = make_sources("""
         cdf:org-a a org:OrganizationalUnit ; schema:name "No address" .
     """)
-    assert repo.count_facilities("") == 1  # old behaviour (xfail in test_repository.py)
-    assert client.count_facilities("") == 0
+    assert client.count_facilities("") == repo.count_facilities("") == 0
+    assert client.search_facilities("") == repo.search_facilities("") == []
 
 
 def test_multi_valued_contacts_are_joined():

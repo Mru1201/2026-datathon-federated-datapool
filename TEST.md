@@ -113,7 +113,7 @@ same data (e.g. phone numbers lost their leading 0), and two facilities differ.
 | `test_whitespace_values_count_as_missing_and_are_trimmed` | whitespace-only values are missing in completeness; statistics trim values (" Pflege " = "Pflege") |
 | `test_injected_duplicate_is_found` | two facilities with identical values (different IRIs) → one group, `occurrences == 2`, both IRIs |
 | `test_quote_in_input_stays_inside_the_literal` | quotes in names/queries are matched literally; `") or true or ("` returns nothing |
-| `test_empty_city_matches_nothing` | **intentional difference**: `count_facilities("")` is 0 (the CSV version wrongly counts facilities without address) |
+| `test_empty_city_matches_nothing` | a facility without an address matches no city: `count_facilities("")` is 0 and `search_facilities("")` is empty, in both implementations |
 | `test_multi_valued_contacts_are_joined` | RDF allows several emails per facility (a CSV cell cannot): all are returned, joined with "; "; `graph_to_frames` refuses such data |
 | `test_escape_literal_used_for_every_placeholder` | placeholder values are escaped in every query |
 
@@ -131,7 +131,7 @@ same data (e.g. phone numbers lost their leading 0), and two facilities differ.
 |---|---|
 | `test_count_facilities_is_case_insensitive` (×3) | Berlin/berlin/BERLIN == independent count from CSVs |
 | `test_count_facilities_unknown_city_is_zero` | unknown city → 0 |
-| `test_count_facilities_empty_string_is_zero` | **xfail (known bug)**: `""` matches facilities without an address. Remove the `xfail` once fixed |
+| `test_count_facilities_empty_string_is_zero` | `""` matches nothing (facilities without an address are not counted; was a bug, fixed) |
 | `test_count_equals_search_length` | `count_facilities` and `search_facilities` agree |
 | `test_search_facilities_result_shape_and_city` | result keys; every result is in the requested city |
 | `test_search_facilities_skips_facilities_without_address` | missing/dangling address IRIs are skipped, no crash |

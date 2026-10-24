@@ -177,8 +177,6 @@ runs these queries on `directory.ttl` and checks that the results are identical 
 * **Duplicates ignore the IRI.** The CSV version compared whole rows *including* the IRI. In
   RDF an IRI is one entity, so that check could never find anything. `detect_duplicates` now
   reports entities whose values are identical in every other column, and adds their `iris`.
-* **`count_facilities("")` returns 0.** The CSV version counted facilities without an
-  address (a known bug, `xfail` in `tests/unit/test_repository.py`).
 * **Several values per property.** RDF allows several emails/phones/homepages per facility
   (~150 facilities live). They are returned joined with `"; "` (a CSV cell holds one value).
 * **Types.** Postal codes and phone numbers are returned as text, as stored (pandas turned

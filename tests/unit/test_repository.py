@@ -51,11 +51,6 @@ def test_count_facilities_unknown_city_is_zero(repository):
     assert actual == 0, f"count_facilities('Atlantis') returned {actual}, expected 0"
 
 
-@pytest.mark.xfail(
-    reason="Known bug: empty city matches facilities without an address "
-    "(NaN is filled with '' and compared to ''). See count_facilities().",
-    strict=True,
-)
 def test_count_facilities_empty_string_is_zero(repository):
     actual = repository.count_facilities("")
     assert actual == 0, (
