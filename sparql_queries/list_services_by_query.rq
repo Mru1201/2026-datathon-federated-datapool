@@ -1,0 +1,27 @@
+# List services whose name, category or audience contains the given text.
+# Match: case-insensitive substring. {{query}} must already be casefolded. Missing
+# fields count as "" (so an empty {{query}} matches every service).
+# Params: {{query}}
+# Used by: SparqlClient.search_services -> MCP tool search_services
+PREFIX schema: <http://schema.org/>
+PREFIX org: <http://www.w3.org/ns/org#>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX cdf: <https://civic-data.de/federated-directory#>
+
+SELECT ?service
+       (SAMPLE(?name_) AS ?name)
+       (SAMPLE(?category_) AS ?category)
+       (SAMPLE(?audience_) AS ?audience)
+WHERE {
+    ?service a schema:Service .
+    OPTIONAL { ?service schema:name ?name_ }
+    OPTIONAL { ?service schema:category ?category_ }
+    OPTIONAL { ?service schema:audience ?audience_ }
+    FILTER(
+        CONTAINS(REPLACE(LCASE(COALESCE(STR(?name_), "")), "ß", "ss"), "{{query}}")
+        || CONTAINS(REPLACE(LCASE(COALESCE(STR(?category_), "")), "ß", "ss"), "{{query}}")
+        || CONTAINS(REPLACE(LCASE(COALESCE(STR(?audience_), "")), "ß", "ss"), "{{query}}")
+    )
+}
+GROUP BY ?service
+ORDER BY ?service

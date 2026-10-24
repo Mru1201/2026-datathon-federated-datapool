@@ -1,6 +1,8 @@
 """MCP protocol layer: does the real server expose and run its tools correctly?
 
-Uses an in-memory MCP client against server.py (no network, no LLM).
+Uses an in-memory MCP client against server.py (no LLM). The tools query the live
+SPARQL endpoint, so the smoke calls need network access; result correctness is checked
+in tests/api/ (live) and tests/unit/test_sparql_parity.py (offline).
 When you add a tool, add an entry to SMOKE_ARGS below.
 """
 
@@ -10,13 +12,12 @@ import sys
 
 import pytest
 
-from tests.helpers import mcp_call, mcp_list_tools, raw_rows
+from tests.helpers import mcp_call, mcp_call_once, mcp_list_tools
 from conftest import ROOT
 
 # tool name -> valid arguments for a smoke call
 SMOKE_ARGS = {
     "count_facilities": {"city": "Berlin"},
-    "count_facilities_with_api": {"city": "Berlin"},
     "search_facilities": {"city": "Berlin"},
     "get_facility_details": {"name": "Drehscheibe"},
     "search_services": {"query": "Suchtberatung"},
@@ -25,7 +26,7 @@ SMOKE_ARGS = {
     "generate_statistics": {},
     "compare_facilities": {"facility_1": "Drehscheibe", "facility_2": "Metropolitankapitel"},
 }
-JSON_TOOLS = [t for t in SMOKE_ARGS if not t.startswith("count_facilities")]
+JSON_TOOLS = [t for t in SMOKE_ARGS if t != "count_facilities"]
 
 
 @pytest.fixture(scope="module")
@@ -69,14 +70,14 @@ def test_tool_metadata_is_llm_friendly(tools, tool):
 
 @pytest.mark.parametrize("tool", sorted(SMOKE_ARGS))
 def test_tool_call_succeeds(tool):
-    is_error, text = mcp_call(tool, SMOKE_ARGS[tool])
+    is_error, text = mcp_call_once(tool, SMOKE_ARGS[tool])
     assert not is_error, f"call {tool}({SMOKE_ARGS[tool]}) returned an MCP error: {text[:300]}"
     assert text.strip(), f"call {tool}({SMOKE_ARGS[tool]}) returned empty output"
 
 
 @pytest.mark.parametrize("tool", JSON_TOOLS)
 def test_tool_returns_valid_json_without_nan(tool):
-    _, text = mcp_call(tool, SMOKE_ARGS[tool])
+    _, text = mcp_call_once(tool, SMOKE_ARGS[tool])
     try:
         json.loads(text)
     except json.JSONDecodeError as exc:
@@ -87,33 +88,11 @@ def test_tool_returns_valid_json_without_nan(tool):
     )
 
 
-def test_count_facilities_returns_correct_number():
-    locality = {a["iri"]: a["schema:addressLocality"] for a in raw_rows("adresse")}
-    expected = sum(
-        1 for e in raw_rows("einrichtung")
-        if locality.get(e["schema:address"], "").casefold() == "berlin"
-    )
-    _, text = mcp_call("count_facilities", {"city": "Berlin"})
-    assert text.strip() == str(expected), (
-        f"count_facilities('Berlin') returned {text!r}, expected {expected}"
-    )
-
-
 def test_umlauts_are_not_escaped():
-    _, text = mcp_call("get_facility_details", {"name": "Lübecker"})
+    _, text = mcp_call_once("get_facility_details", {"name": "Lübecker"})
     assert "Lübecker" in text, (
         "umlauts missing/escaped in tool output (to_json must use ensure_ascii=False); "
         f"output starts: {text[:200]!r}"
-    )
-
-
-def test_search_services_output_matches_csv():
-    expected = sum(1 for s in raw_rows("angebot") if "suchtberatung" in s["schema:name"].casefold()
-                   or "suchtberatung" in s["schema:category"].casefold()
-                   or "suchtberatung" in s["schema:audience"].casefold())
-    _, text = mcp_call("search_services", {"query": "Suchtberatung"})
-    assert len(json.loads(text)) == expected, (
-        f"search_services('Suchtberatung') returned {len(json.loads(text))} item(s), expected {expected}"
     )
 
 

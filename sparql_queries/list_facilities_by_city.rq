@@ -1,0 +1,33 @@
+# List facilities whose address is in the given city, with address and contact fields.
+# Match: same as count_facilities_by_city.rq. Multi-valued telephone/email/homepage are
+# joined with "; ".
+# Params: {{city}}
+# Used by: SparqlClient.search_facilities -> MCP tool search_facilities
+PREFIX schema: <http://schema.org/>
+PREFIX org: <http://www.w3.org/ns/org#>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX cdf: <https://civic-data.de/federated-directory#>
+
+SELECT ?facility
+       (SAMPLE(?name_) AS ?name)
+       (SAMPLE(?street_) AS ?street)
+       (SAMPLE(?postal_code_) AS ?postal_code)
+       (SAMPLE(?city_) AS ?city)
+       (GROUP_CONCAT(DISTINCT STR(?telephone_); separator="; ") AS ?telephone)
+       (GROUP_CONCAT(DISTINCT STR(?email_); separator="; ") AS ?email)
+       (GROUP_CONCAT(DISTINCT STR(?homepage_); separator="; ") AS ?homepage)
+WHERE {
+    ?facility a org:OrganizationalUnit ;
+              schema:address ?address .
+    ?address a schema:PostalAddress ;
+             schema:addressLocality ?city_ .
+    FILTER(REPLACE(LCASE(STR(?city_)), "ß", "ss") = "{{city}}")
+    OPTIONAL { ?facility schema:name ?name_ }
+    OPTIONAL { ?address schema:streetAddress ?street_ }
+    OPTIONAL { ?address schema:postalCode ?postal_code_ }
+    OPTIONAL { ?facility schema:telephone ?telephone_ }
+    OPTIONAL { ?facility schema:email ?email_ }
+    OPTIONAL { ?facility foaf:homepage ?homepage_ }
+}
+GROUP BY ?facility
+ORDER BY ?facility

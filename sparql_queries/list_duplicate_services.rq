@@ -1,0 +1,37 @@
+# Groups of services that have identical values in every column except the IRI.
+# Columns = the CSV columns of angebotSchema.csv (data/). Missing values compare as equal;
+# multi-valued properties are joined with "; ". Only groups with > 1 entity are returned.
+# Params: none
+# Used by: SparqlClient.detect_duplicates -> MCP tool detect_duplicates (angebot)
+PREFIX schema: <http://schema.org/>
+PREFIX org: <http://www.w3.org/ns/org#>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX cdf: <https://civic-data.de/federated-directory#>
+
+SELECT (COUNT(?entity) AS ?occurrences)
+       (GROUP_CONCAT(STR(?entity); separator=" ") AS ?iris)
+       ?name ?category ?code_value ?audience ?area_served ?provider
+WHERE {
+    {
+        SELECT ?entity
+               (GROUP_CONCAT(DISTINCT STR(?name_); separator="; ") AS ?name)
+               (GROUP_CONCAT(DISTINCT STR(?category_); separator="; ") AS ?category)
+               (GROUP_CONCAT(DISTINCT STR(?code_value_); separator="; ") AS ?code_value)
+               (GROUP_CONCAT(DISTINCT STR(?audience_); separator="; ") AS ?audience)
+               (GROUP_CONCAT(DISTINCT STR(?area_served_); separator="; ") AS ?area_served)
+               (GROUP_CONCAT(DISTINCT STR(?provider_); separator="; ") AS ?provider)
+        WHERE {
+            ?entity a schema:Service .
+            OPTIONAL { ?entity schema:name ?name_ }
+            OPTIONAL { ?entity schema:category ?category_ }
+            OPTIONAL { ?entity schema:codeValue ?code_value_ }
+            OPTIONAL { ?entity schema:audience ?audience_ }
+            OPTIONAL { ?entity schema:areaServed ?area_served_ }
+            OPTIONAL { ?entity schema:provider ?provider_ }
+        }
+        GROUP BY ?entity
+    }
+}
+GROUP BY ?name ?category ?code_value ?audience ?area_served ?provider
+HAVING (COUNT(?entity) > 1)
+ORDER BY DESC(?occurrences)

@@ -1,0 +1,17 @@
+# Number of services per audience.
+# Values are trimmed; empty values are left out.
+# Params: none
+# Used by: SparqlClient.generate_statistics (services_by_audience)
+PREFIX schema: <http://schema.org/>
+PREFIX org: <http://www.w3.org/ns/org#>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX cdf: <https://civic-data.de/federated-directory#>
+
+SELECT ?value (COUNT(DISTINCT ?service) AS ?count) WHERE {
+    ?service a schema:Service ;
+             schema:audience ?raw .
+    BIND(REPLACE(STR(?raw), "^\\s+|\\s+$", "") AS ?value)
+    FILTER(?value != "")
+}
+GROUP BY ?value
+ORDER BY DESC(?count) ?value

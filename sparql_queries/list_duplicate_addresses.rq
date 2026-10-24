@@ -1,0 +1,37 @@
+# Groups of addresses that have identical values in every column except the IRI.
+# Columns = the CSV columns of adresseSchema.csv (data/). Missing values compare as equal;
+# multi-valued properties are joined with "; ". Only groups with > 1 entity are returned.
+# Params: none
+# Used by: SparqlClient.detect_duplicates -> MCP tool detect_duplicates (adresse)
+PREFIX schema: <http://schema.org/>
+PREFIX org: <http://www.w3.org/ns/org#>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX cdf: <https://civic-data.de/federated-directory#>
+
+SELECT (COUNT(?entity) AS ?occurrences)
+       (GROUP_CONCAT(STR(?entity); separator=" ") AS ?iris)
+       ?street_address ?postal_code ?address_locality ?address_country ?latitude ?longitude
+WHERE {
+    {
+        SELECT ?entity
+               (GROUP_CONCAT(DISTINCT STR(?street_address_); separator="; ") AS ?street_address)
+               (GROUP_CONCAT(DISTINCT STR(?postal_code_); separator="; ") AS ?postal_code)
+               (GROUP_CONCAT(DISTINCT STR(?address_locality_); separator="; ") AS ?address_locality)
+               (GROUP_CONCAT(DISTINCT STR(?address_country_); separator="; ") AS ?address_country)
+               (GROUP_CONCAT(DISTINCT STR(?latitude_); separator="; ") AS ?latitude)
+               (GROUP_CONCAT(DISTINCT STR(?longitude_); separator="; ") AS ?longitude)
+        WHERE {
+            ?entity a schema:PostalAddress .
+            OPTIONAL { ?entity schema:streetAddress ?street_address_ }
+            OPTIONAL { ?entity schema:postalCode ?postal_code_ }
+            OPTIONAL { ?entity schema:addressLocality ?address_locality_ }
+            OPTIONAL { ?entity schema:addressCountry ?address_country_ }
+            OPTIONAL { ?entity schema:latitude ?latitude_ }
+            OPTIONAL { ?entity schema:longitude ?longitude_ }
+        }
+        GROUP BY ?entity
+    }
+}
+GROUP BY ?street_address ?postal_code ?address_locality ?address_country ?latitude ?longitude
+HAVING (COUNT(?entity) > 1)
+ORDER BY DESC(?occurrences)

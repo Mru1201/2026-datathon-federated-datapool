@@ -4,7 +4,7 @@
     "prompt": "How many AWO facilities are there in Berlin?",
     "expect_tool": "count_facilities",
     "expect_args": {"city": "Berlin"},
-    "answer_contains": ["151"]
+    "answer_contains": ["646"]
   },
   {
     "id": "search-facilities-berlin",

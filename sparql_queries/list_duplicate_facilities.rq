@@ -1,0 +1,53 @@
+# Groups of facilities that have identical values in every column except the IRI.
+# Columns = the CSV columns of einrichtungSchema.csv (data/). Missing values compare as equal;
+# multi-valued properties are joined with "; ". Only groups with > 1 entity are returned.
+# Params: none
+# Used by: SparqlClient.detect_duplicates -> MCP tool detect_duplicates (einrichtung)
+PREFIX schema: <http://schema.org/>
+PREFIX org: <http://www.w3.org/ns/org#>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX cdf: <https://civic-data.de/federated-directory#>
+
+SELECT (COUNT(?entity) AS ?occurrences)
+       (GROUP_CONCAT(STR(?entity); separator=" ") AS ?iris)
+       ?name ?alternate_name ?telephone ?email ?homepage ?main_entity_of_page ?category ?available_service ?audience ?accessibility_summary ?opening_hours ?parent_organization ?parent_org_classification ?address
+WHERE {
+    {
+        SELECT ?entity
+               (GROUP_CONCAT(DISTINCT STR(?name_); separator="; ") AS ?name)
+               (GROUP_CONCAT(DISTINCT STR(?alternate_name_); separator="; ") AS ?alternate_name)
+               (GROUP_CONCAT(DISTINCT STR(?telephone_); separator="; ") AS ?telephone)
+               (GROUP_CONCAT(DISTINCT STR(?email_); separator="; ") AS ?email)
+               (GROUP_CONCAT(DISTINCT STR(?homepage_); separator="; ") AS ?homepage)
+               (GROUP_CONCAT(DISTINCT STR(?main_entity_of_page_); separator="; ") AS ?main_entity_of_page)
+               (GROUP_CONCAT(DISTINCT STR(?category_); separator="; ") AS ?category)
+               (GROUP_CONCAT(DISTINCT STR(?available_service_); separator="; ") AS ?available_service)
+               (GROUP_CONCAT(DISTINCT STR(?audience_); separator="; ") AS ?audience)
+               (GROUP_CONCAT(DISTINCT STR(?accessibility_summary_); separator="; ") AS ?accessibility_summary)
+               (GROUP_CONCAT(DISTINCT STR(?opening_hours_); separator="; ") AS ?opening_hours)
+               (GROUP_CONCAT(DISTINCT STR(?parent_organization_); separator="; ") AS ?parent_organization)
+               (GROUP_CONCAT(DISTINCT STR(?parent_org_classification_); separator="; ") AS ?parent_org_classification)
+               (GROUP_CONCAT(DISTINCT STR(?address_); separator="; ") AS ?address)
+        WHERE {
+            ?entity a org:OrganizationalUnit .
+            OPTIONAL { ?entity schema:name ?name_ }
+            OPTIONAL { ?entity schema:alternateName ?alternate_name_ }
+            OPTIONAL { ?entity schema:telephone ?telephone_ }
+            OPTIONAL { ?entity schema:email ?email_ }
+            OPTIONAL { ?entity foaf:homepage ?homepage_ }
+            OPTIONAL { ?entity schema:mainEntityOfPage ?main_entity_of_page_ }
+            OPTIONAL { ?entity schema:category ?category_ }
+            OPTIONAL { ?entity schema:availableService ?available_service_ }
+            OPTIONAL { ?entity schema:audience ?audience_ }
+            OPTIONAL { ?entity schema:accessibilitySummary ?accessibility_summary_ }
+            OPTIONAL { ?entity schema:openingHours ?opening_hours_ }
+            OPTIONAL { ?entity schema:parentOrganization ?parent_organization_ }
+            OPTIONAL { ?entity cdf:parentOrgClassification ?parent_org_classification_ }
+            OPTIONAL { ?entity schema:address ?address_ }
+        }
+        GROUP BY ?entity
+    }
+}
+GROUP BY ?name ?alternate_name ?telephone ?email ?homepage ?main_entity_of_page ?category ?available_service ?audience ?accessibility_summary ?opening_hours ?parent_organization ?parent_org_classification ?address
+HAVING (COUNT(?entity) > 1)
+ORDER BY DESC(?occurrences)

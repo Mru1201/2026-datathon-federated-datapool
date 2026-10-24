@@ -1,0 +1,25 @@
+# Count all facilities, those whose address resolves to a schema:PostalAddress and
+# those whose parentOrganization resolves to a schema:Organization.
+# Params: none
+# Used by: SparqlClient.generate_statistics (facility_relationships)
+PREFIX schema: <http://schema.org/>
+PREFIX org: <http://www.w3.org/ns/org#>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX cdf: <https://civic-data.de/federated-directory#>
+
+SELECT (COUNT(DISTINCT ?facility) AS ?total)
+       (COUNT(DISTINCT ?with_address) AS ?with_address)
+       (COUNT(DISTINCT ?with_provider) AS ?with_provider)
+WHERE {
+    ?facility a org:OrganizationalUnit .
+    OPTIONAL {
+        ?facility schema:address ?address .
+        ?address a schema:PostalAddress .
+        BIND(?facility AS ?with_address)
+    }
+    OPTIONAL {
+        ?facility schema:parentOrganization ?provider .
+        ?provider a schema:Organization .
+        BIND(?facility AS ?with_provider)
+    }
+}

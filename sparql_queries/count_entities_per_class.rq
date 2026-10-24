@@ -1,0 +1,13 @@
+# Count entities of each dataset class (facility, address, service, provider).
+# Params: none
+# Used by: SparqlClient.check_completeness, SparqlClient.generate_statistics
+PREFIX schema: <http://schema.org/>
+PREFIX org: <http://www.w3.org/ns/org#>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX cdf: <https://civic-data.de/federated-directory#>
+
+SELECT ?class (COUNT(DISTINCT ?entity) AS ?count) WHERE {
+    VALUES ?class { org:OrganizationalUnit schema:PostalAddress schema:Service schema:Organization }
+    ?entity a ?class .
+}
+GROUP BY ?class

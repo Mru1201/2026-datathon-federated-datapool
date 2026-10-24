@@ -1,12 +1,17 @@
-# Count facilities whose address is in the given city (case-insensitive exact match).
+# Count facilities whose address is in the given city.
+# Match: exact, case-insensitive. {{city}} must already be casefolded; the data side is
+# lower-cased with ß -> ss, which equals Python's str.casefold() for German text.
 # Params: {{city}}
-# Used by: SparqlClient.count_facilities -> MCP tool count_facilities_with_api
+# Used by: SparqlClient.count_facilities -> MCP tool count_facilities
 PREFIX schema: <http://schema.org/>
 PREFIX org: <http://www.w3.org/ns/org#>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX cdf: <https://civic-data.de/federated-directory#>
 
 SELECT (COUNT(DISTINCT ?facility) AS ?count) WHERE {
     ?facility a org:OrganizationalUnit ;
               schema:address ?address .
-    ?address schema:addressLocality ?city .
-    FILTER(LCASE(STR(?city)) = LCASE("{{city}}"))
+    ?address a schema:PostalAddress ;
+             schema:addressLocality ?city .
+    FILTER(REPLACE(LCASE(STR(?city)), "ß", "ss") = "{{city}}")
 }

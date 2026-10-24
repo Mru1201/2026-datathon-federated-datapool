@@ -1,1 +1,2 @@
 pytest>=8
+rdflib>=7

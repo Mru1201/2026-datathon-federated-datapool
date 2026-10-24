@@ -1,8 +1,8 @@
 # SPARQL queries
 
-The MCP tools ending in `_with_api` do not read the local CSVs. They query the live
-**Federated directory of social support services in Germany** (SoSuSe, run by CorrelAid)
-over SPARQL. Every query goes through the custom `SparqlClient` class in
+All MCP tools in `server.py` query the live **Federated directory of social support
+services in Germany** (SoSuSe, run by CorrelAid) over SPARQL. They no longer read the
+local CSVs in `data/`. Every query goes through the custom `SparqlClient` class in
 `src/sparql_client.py`. Tools never build query strings themselves.
 
 ## The API
@@ -50,13 +50,17 @@ Named graphs hold the pipeline behind the directory (`urn:directory:data/pipelin
 
 * **Read-only.** Treat the endpoint as read-only; the MCP never sends updates.
 * **Not AWO-only.** The directory federates all providers (mostly Caritas and DHS). AWO is a
-  small part, so `count_facilities_with_api` ≠ CSV-based `count_facilities`. Only 39 facilities
+  small part, so all numbers are much larger than with the old AWO CSVs (e.g. Berlin: 646
+  facilities instead of 151). Only 39 facilities
   have a `schema:parentOrganization`, so filtering by provider is limited.
 * **City names are not normalised.** `addressLocality` contains values like `Berlin-Mitte`,
   `Berlin- Tempelhof` or `Berl Berlin`. The exact match in `count_facilities_by_city.rq`
   counts only `Berlin` (any case). Districts and typos are not included.
 * **Data quality:** not every facility has an address (~37.3k facilities, ~37.0k with one),
   some addresses lack coordinates, and several facilities may share one address.
+* **Big answers.** `generate_statistics` returns ~5,800 cities and `check_completeness` /
+  `detect_duplicates` scan all ~67k entities (5–15 s). An empty name/query in
+  `get_facility_details` / `search_services` matches everything (as in the CSV version).
 * **No paging in the client yet.** Large `list_*` queries return everything at once. Add
   `LIMIT`/`OFFSET` in the query file when a tool needs paging.
 * **`SparqlClient.query` parses JSON only**, so it is meant for `SELECT` and `ASK`.
@@ -67,7 +71,7 @@ Named graphs hold the pipeline behind the directory (`urn:directory:data/pipelin
 ## How a query runs: `SparqlClient`
 
 ```
-MCP tool (server.py)              count_facilities_with_api(city)
+MCP tool (server.py)              count_facilities(city)
   → SparqlClient method           sparql.count_facilities(city)
     → load_query(name, **params)  reads sparql_queries/count_facilities_by_city.rq,
                                   fills {{city}} with an escaped literal
@@ -75,12 +79,16 @@ MCP tool (server.py)              count_facilities_with_api(city)
   ← parsed bindings → int / list / dict returned to the tool
 ```
 
-* `load_query(name, **params)` loads `sparql_queries/<name>.rq` and replaces every
+* `load_query(query_name, **params)` loads `sparql_queries/<query_name>.rq` and replaces every
   `{{param}}` with the escaped value (`escape_literal`: `\`, `"`, newlines, tabs). A missing
   parameter raises `ValueError`.
 * `SparqlClient(endpoint=None, timeout=30)` uses `$SPARQL_ENDPOINT` or the default endpoint.
 * `SparqlClient.query(sparql)` runs any SPARQL string and returns the parsed JSON.
-* One method per use case (e.g. `count_facilities`) turns the bindings into a plain Python value.
+* `SparqlClient.select(query_name, **params)` = `load_query` + `query` + `rows()`: a list of
+  `{variable: value}` dicts (unbound / empty → `None`).
+* One method per tool turns the rows into the tool's result (same shape as the old CSV
+  version). `DATASETS` maps the four datasets (`einrichtung`, `adresse`, `angebot`,
+  `traeger`) to their RDF class and the CSV column list.
 
 Placeholders are only safe **inside double-quoted string literals** (`"{{city}}"`). Never
 put one where an IRI, number, variable or keyword belongs (e.g. `LIMIT {{n}}`). For those,
@@ -91,35 +99,98 @@ validate the value in Python first.
 One query per file in `sparql_queries/`:
 
 ```
-<action>_<entity>_by_<filter>.rq
+<action>_<entity>[_by_<param>][_per_<group>].rq
 ```
 
 | Part | Meaning | Values |
 |---|---|---|
-| `action` | what the query returns | `count` (one number), `list` (rows), `get` (one item), `ask` (yes/no) |
-| `entity` | the main thing queried, plural | `facilities`, `services`, `providers`, `addresses`, `facility_cities`, … |
-| `by_<filter>` | the parameter(s) it filters on | `by_city`, `by_name`, `by_postal_code`, `by_city_substring`, … |
+| `action` | what the query returns | `count` (numbers), `list` (rows), `get` (one item), `ask` (yes/no) |
+| `entity` | the main thing queried, plural | `facilities`, `services`, `entities`, `facility_details`, `duplicate_facilities`, … |
+| `_by_<param>` | the input it filters on: **must name every `{{param}}`** in the file | `by_city`, `by_name`, `by_query`, `by_city_substring` |
+| `_per_<group>` | the result is grouped (one row per group, uses `GROUP BY`) | `per_city`, `per_class`, `per_category` |
+
+Examples: `count_facilities_by_city` = one number, filtered by `{{city}}`.
+`count_facilities_per_city` = one count per city, no input.
+`list_duplicate_facilities` = rows, no input, no grouping in the name.
 
 All lower snake case. Each file starts with a header comment:
 
 ```sparql
 # <what it returns, one line>
-# Params: {{city}}
+# Params: {{city}}          (or: none)
 # Used by: <method / tool / test that uses it>
 ```
 
 Apart from placeholders, files are plain SPARQL and can be pasted into the endpoint's
 query UI. `test_query_files_follow_naming_convention` in `tests/api/test_sparql.py` fails
-for any `.rq` file that does not match the schema or lacks the header.
+for any `.rq` file that breaks the schema, takes a `{{param}}` its name does not mention,
+is named `_per_` without a `GROUP BY`, or lacks the header.
 
-| File | Returns | Used by |
+### Text matching (same as Python `str.casefold()`)
+
+Inputs are casefolded in Python (`city.casefold()`) before they go into the query. The data
+side is normalised in SPARQL with `REPLACE(LCASE(STR(?x)), "ß", "ss")`. For German text
+this equals `casefold()` (`GIESSEN` matches `Gießen`). City matches are exact, name and
+service matches are substrings (`CONTAINS`, no regex). Statistics trim values with
+`REPLACE(?x, "^\\s+|\\s+$", "")` like pandas `str.strip()`.
+
+## Query files
+
+| File | Returns | Used by (tool) |
 |---|---|---|
-| `count_facilities_by_city.rq` | `?count` of facilities in a city (case-insensitive exact match) | `SparqlClient.count_facilities` → `count_facilities_with_api` |
-| `list_facility_cities_by_city_substring.rq` | `?facility ?city` rows whose city contains the text | `tests/api/test_sparql.py` (independent reference) |
+| `count_facilities_by_city.rq` | `?count` of facilities in a city | `count_facilities` |
+| `list_facilities_by_city.rq` | facility + address + contact rows for a city | `search_facilities` |
+| `list_facility_details_by_name.rq` | facility details, address and provider for a name substring | `get_facility_details`, `compare_facilities` |
+| `list_services_by_query.rq` | services whose name/category/audience contains the query | `search_services` |
+| `list_duplicate_facilities.rq` | groups of facilities identical in all CSV columns except the IRI | `detect_duplicates` |
+| `list_duplicate_addresses.rq` | same for addresses | `detect_duplicates` |
+| `list_duplicate_services.rq` | same for services | `detect_duplicates` |
+| `list_duplicate_providers.rq` | same for providers | `detect_duplicates` |
+| `count_entities_per_class.rq` | number of entities per dataset class | `check_completeness`, `generate_statistics` |
+| `count_filled_properties_per_class.rq` | entities with a non-blank value, per class and property | `check_completeness` |
+| `count_facilities_per_city.rq` | facilities per (trimmed) city | `generate_statistics` |
+| `count_facilities_per_category.rq` | facilities per category | `generate_statistics` |
+| `count_facilities_per_provider.rq` | facilities per provider name | `generate_statistics` |
+| `count_facility_links.rq` | total / with address / with provider | `generate_statistics` |
+| `count_services_per_category.rq` | services per category | `generate_statistics` |
+| `count_services_per_audience.rq` | services per audience | `generate_statistics` |
+| `list_facility_cities_by_city_substring.rq` | `?facility ?city` rows whose city contains the text | tests only (independent reference) |
+
+### How each tool maps to the old CSV logic
+
+The CSV datasets and the RDF use the same IRIs and properties: a CSV row is an entity, a
+filled cell is a triple, an empty cell is a missing triple. `tests/unit/test_sparql_parity.py`
+runs these queries on `directory.ttl` and checks that the results are identical to the old
+`DataRepository` run on tables derived from the same file.
+
+| Tool | Old CSV logic | SPARQL equivalent |
+|---|---|---|
+| `count_facilities` / `search_facilities` | facility's address must exist in `adresse`; locality casefold == city | `schema:address` → `?a a schema:PostalAddress`; casefold-equal filter |
+| `get_facility_details` | name (NaN → "") casefold contains query; address/provider attached only if the link resolves | `COALESCE(name, "")` + `CONTAINS`; `OPTIONAL` blocks that require `a schema:PostalAddress` / `a schema:Organization` |
+| `search_services` | name, category or audience contains the query | `OPTIONAL` + `COALESCE` + three `CONTAINS` joined with `||` |
+| `check_completeness` | per column: NaN or whitespace-only = missing | rows − entities with a value matching `\S` (IRIs always count as filled) |
+| `generate_statistics` | `value_counts()` of trimmed, non-empty values; relationship = link resolves | `GROUP BY` trimmed value, `FILTER(?value != "")`; link counted when its target has the right class |
+| `compare_facilities` | `get_facility_details` twice | same |
+
+**Intentional differences**
+
+* **Duplicates ignore the IRI.** The CSV version compared whole rows *including* the IRI. In
+  RDF an IRI is one entity, so that check could never find anything. `detect_duplicates` now
+  reports entities whose values are identical in every other column, and adds their `iris`.
+* **`count_facilities("")` returns 0.** The CSV version counted facilities without an
+  address (a known bug, `xfail` in `tests/unit/test_repository.py`).
+* **Several values per property.** RDF allows several emails/phones/homepages per facility
+  (~150 facilities live). They are returned joined with `"; "` (a CSV cell holds one value).
+* **Types.** Postal codes and phone numbers are returned as text, as stored (pandas turned
+  them into numbers and dropped leading zeros). Coordinates are floats as before.
+* **Order.** Lists are ordered by IRI (the CSV version used file order). Statistics are
+  ordered by count, then value.
 
 ## Adding a query-backed tool
 
-1. Write `sparql_queries/<action>_<entity>_by_<filter>.rq` with the header, and add it to the table above.
-2. Add a `SparqlClient` method that calls `self.query(load_query("<name>", ...))` and returns a plain value.
-3. Add an `@mcp.tool()` in `server.py` named `<something>_with_api` that calls the method.
-4. Add tests in `tests/api/`, register the tool in `SMOKE_ARGS`, and describe the tests in `TEST.md`.
+1. Write the `.rq` file following the naming schema, with the header, and add it to the table above.
+2. Add a `SparqlClient` method that calls `self.select("<query_name>", ...)` and returns a plain value.
+3. Add an `@mcp.tool()` in `server.py` that calls the method, and register it in `SMOKE_ARGS`.
+4. Add offline tests in `tests/unit/` (run the query on `directory.ttl` or a small Turtle
+   snippet via `LocalSparqlClient(load_graph(...))`), live tests in `tests/api/`, and
+   describe them in `TEST.md`.

@@ -1,0 +1,64 @@
+# List facilities whose name contains the given text, with details, address and provider.
+# Match: case-insensitive substring. {{name}} must already be casefolded. Facilities
+# without a name count as "" (so an empty {{name}} matches every facility).
+# Address/provider columns are only bound when the link resolves to a
+# schema:PostalAddress / schema:Organization. Multi-valued fields are joined with "; ".
+# Params: {{name}}
+# Used by: SparqlClient.get_facility_details -> MCP tools get_facility_details, compare_facilities
+PREFIX schema: <http://schema.org/>
+PREFIX org: <http://www.w3.org/ns/org#>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX cdf: <https://civic-data.de/federated-directory#>
+
+SELECT ?facility
+       (SAMPLE(?name_) AS ?name)
+       (SAMPLE(?alternate_name_) AS ?alternate_name)
+       (GROUP_CONCAT(DISTINCT STR(?telephone_); separator="; ") AS ?telephone)
+       (GROUP_CONCAT(DISTINCT STR(?email_); separator="; ") AS ?email)
+       (GROUP_CONCAT(DISTINCT STR(?homepage_); separator="; ") AS ?homepage)
+       (SAMPLE(?category_) AS ?category)
+       (SAMPLE(?service_description_) AS ?service_description)
+       (SAMPLE(?address_) AS ?address)
+       (SAMPLE(?street_) AS ?street)
+       (SAMPLE(?postal_code_) AS ?postal_code)
+       (SAMPLE(?city_) AS ?city)
+       (SAMPLE(?country_) AS ?country)
+       (SAMPLE(?latitude_) AS ?latitude)
+       (SAMPLE(?longitude_) AS ?longitude)
+       (SAMPLE(?provider_) AS ?provider)
+       (SAMPLE(?provider_name_) AS ?provider_name)
+       (SAMPLE(?provider_homepage_) AS ?provider_homepage)
+WHERE {
+    {
+        SELECT DISTINCT ?facility WHERE {
+            ?facility a org:OrganizationalUnit .
+            OPTIONAL { ?facility schema:name ?match_name }
+            FILTER(CONTAINS(REPLACE(LCASE(COALESCE(STR(?match_name), "")), "ß", "ss"), "{{name}}"))
+        }
+    }
+    OPTIONAL { ?facility schema:name ?name_ }
+    OPTIONAL { ?facility schema:alternateName ?alternate_name_ }
+    OPTIONAL { ?facility schema:telephone ?telephone_ }
+    OPTIONAL { ?facility schema:email ?email_ }
+    OPTIONAL { ?facility foaf:homepage ?homepage_ }
+    OPTIONAL { ?facility schema:category ?category_ }
+    OPTIONAL { ?facility schema:availableService ?service_description_ }
+    OPTIONAL {
+        ?facility schema:address ?address_ .
+        ?address_ a schema:PostalAddress .
+        OPTIONAL { ?address_ schema:streetAddress ?street_ }
+        OPTIONAL { ?address_ schema:postalCode ?postal_code_ }
+        OPTIONAL { ?address_ schema:addressLocality ?city_ }
+        OPTIONAL { ?address_ schema:addressCountry ?country_ }
+        OPTIONAL { ?address_ schema:latitude ?latitude_ }
+        OPTIONAL { ?address_ schema:longitude ?longitude_ }
+    }
+    OPTIONAL {
+        ?facility schema:parentOrganization ?provider_ .
+        ?provider_ a schema:Organization .
+        OPTIONAL { ?provider_ schema:name ?provider_name_ }
+        OPTIONAL { ?provider_ foaf:homepage ?provider_homepage_ }
+    }
+}
+GROUP BY ?facility
+ORDER BY ?facility

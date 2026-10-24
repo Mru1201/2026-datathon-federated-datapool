@@ -1,0 +1,31 @@
+# Groups of providers that have identical values in every column except the IRI.
+# Columns = the CSV columns of traegerSchema.csv (data/). Missing values compare as equal;
+# multi-valued properties are joined with "; ". Only groups with > 1 entity are returned.
+# Params: none
+# Used by: SparqlClient.detect_duplicates -> MCP tool detect_duplicates (traeger)
+PREFIX schema: <http://schema.org/>
+PREFIX org: <http://www.w3.org/ns/org#>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX cdf: <https://civic-data.de/federated-directory#>
+
+SELECT (COUNT(?entity) AS ?occurrences)
+       (GROUP_CONCAT(STR(?entity); separator=" ") AS ?iris)
+       ?name ?homepage ?address
+WHERE {
+    {
+        SELECT ?entity
+               (GROUP_CONCAT(DISTINCT STR(?name_); separator="; ") AS ?name)
+               (GROUP_CONCAT(DISTINCT STR(?homepage_); separator="; ") AS ?homepage)
+               (GROUP_CONCAT(DISTINCT STR(?address_); separator="; ") AS ?address)
+        WHERE {
+            ?entity a schema:Organization .
+            OPTIONAL { ?entity schema:name ?name_ }
+            OPTIONAL { ?entity foaf:homepage ?homepage_ }
+            OPTIONAL { ?entity schema:address ?address_ }
+        }
+        GROUP BY ?entity
+    }
+}
+GROUP BY ?name ?homepage ?address
+HAVING (COUNT(?entity) > 1)
+ORDER BY DESC(?occurrences)

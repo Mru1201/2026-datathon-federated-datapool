@@ -6,8 +6,8 @@ case), so a red test tells you where to look without a debugger.
 
 | Layer | Folder | Needs | Runs in CI |
 |---|---|---|---|
-| 1. Unit | `tests/unit/` | nothing | every push/PR (hosted runner) |
-| 2. MCP protocol | `tests/protocol/` | nothing (SPARQL endpoint for the `count_facilities_with_api` smoke calls) | every push/PR (hosted runner) |
+| 1. Unit (incl. SPARQL parity) | `tests/unit/` | nothing (offline, rdflib) | every push/PR (hosted runner) |
+| 2. MCP protocol | `tests/protocol/` | SPARQL endpoint (all tools query it) | every push/PR (hosted runner) |
 | 3. SPARQL API | `tests/api/` | SPARQL endpoint (live tests skip if unreachable) | every push/PR (hosted runner) |
 | 4. Connection smoke | `tests/llm/` | Open WebUI + API key | manual (self-hosted runner) |
 | 5. Tool-calling evals | `tests/evals/` | Open WebUI + API key | manual (self-hosted runner) |
@@ -18,8 +18,10 @@ case), so a red test tells you where to look without a debugger.
 conda activate mcp
 pip install -r requirements-dev.txt          # once
 
-pytest -m "not llm"                           # layers 1-3, ~10 s, needs the SPARQL endpoint
-pytest tests/api                              # layer 3 only: SPARQL queries + count_facilities_with_api
+pytest -m "not llm"                           # layers 1-3, ~1 min, ~47 requests to the SPARQL endpoint
+pytest tests/unit                             # layer 1 only, offline, ~10 s (incl. SPARQL parity)
+pytest tests/unit/test_sparql_parity.py       # new queries vs. old CSV logic, offline
+pytest tests/api                              # layer 3 only: every tool against the live endpoint
 pytest -m llm tests/llm                       # is Open WebUI/Ollama reachable?
 pytest -m llm tests/evals                     # default model (OPENWEBUI_MODEL or first listed)
 pytest -m llm tests/evals --models qwen3:8b,gemma4:12b --runs 3 --pass-threshold 0.67
@@ -53,6 +55,12 @@ pytest --no-dashboard           # off (also off automatically when $CI is set)
 
 ## Layer 1 – Unit tests (`tests/unit/`)
 
+All MCP tools now read the live SPARQL API (`src/sparql_client.py`, see `QUERIES.md`).
+The old CSV implementation (`DataLoader` + `DataRepository`) is no longer used by
+`server.py`. It stays as the **reference implementation**: `test_sparql_parity.py` checks
+that every new query does exactly what the old CSV code did, and `test_loader.py` /
+`test_repository.py` keep that reference correct.
+
 Expected values are computed from the raw CSVs with the `csv` module, independent of
 the code under test. Edge cases use tiny synthetic datasets (`tests/helpers.py:make_repo`).
 
@@ -68,7 +76,48 @@ the code under test. Edge cases use tiny synthetic datasets (`tests/helpers.py:m
 | `test_facility_address_references_resolve` | every facility address IRI exists in `adresse` |
 | `test_facility_provider_references_resolve` | every facility provider IRI exists in `traeger` |
 
-### `test_repository.py` – `DataRepository`
+### `test_sparql_parity.py` – new SPARQL queries vs. old CSV logic
+
+Offline, no network. **Source: `directory.ttl`** (the RDF export of the directory, same
+vocabulary as the live endpoint), loaded into an in-memory rdflib graph
+(`tests/helpers.py:load_graph`). Both implementations get exactly the same data:
+
+* **new:** the real `.rq` files run on the graph through `SparqlClient` with an in-memory
+  rdflib backend instead of HTTP (`LocalSparqlClient`)
+* **old:** `DataRepository` runs on tables derived from the graph
+  (`tests/helpers.py:graph_to_frames`): one row per entity, one column per column of the
+  `*Schema.csv` headers, NaN when a property is absent
+
+The old result is the expected value. Lists are compared sorted by IRI (the SPARQL queries
+return IRI order). Coordinates are compared as floats. Edge cases use small Turtle
+snippets. The CSVs in `data/` are not used here: they are an older, lossy export of the
+same data (e.g. phone numbers lost their leading 0), and two facilities differ.
+
+| Test | Checks |
+|---|---|
+| `test_rows_flattens_bindings_and_maps_empty_to_none` | SPARQL JSON bindings → flat dicts; unbound or empty `GROUP_CONCAT` → `None` |
+| `test_expand_and_column_variable` | `schema:postalCode` → full IRI and query variable `postal_code` |
+| `test_to_float` | coordinate literals → float; `None` stays `None` |
+| `test_dataset_columns_match_csv_headers` (×4) | `DATASETS` column lists in `sparql_client.py` == headers of the `data/*Schema.csv` files |
+| `test_duplicate_query_selects_every_column` (×4) | each `list_duplicate_*.rq` compares every non-IRI column |
+| `test_count_facilities_parity` (×4) | Berlin/berlin/BERLIN/Atlantis: SPARQL count == CSV count |
+| `test_search_facilities_parity` (×4) | same cities: identical result rows (all 8 fields) |
+| `test_get_facility_details_parity` (×7) | Drehscheibe, drehscheibe, Lübecker, (HLS6), .*, AWO, empty: identical details incl. nested address and provider |
+| `test_search_services_parity` (×7) | Suchtberatung, sucht, Senioren, Pflege, Beratung, no-match, empty: identical services |
+| `test_detect_duplicates_parity` | same groups as the pandas duplicate logic with the IRI column left out |
+| `test_check_completeness_parity` | identical rows/columns/missing counts and percentages for all 4 datasets |
+| `test_generate_statistics_parity` (×7) | each statistics section identical (sizes, by city/category/provider, relationships, services by category/audience) |
+| `test_compare_facilities_parity` | identical result for Drehscheibe vs. Metropolitankapitel |
+| `test_casefold_matches_eszett_like_python` | Gießen / GIESSEN / giessen all match, like Python `casefold()` |
+| `test_dangling_address_is_skipped_like_csv` | an address link to a missing address counts as "no address" in count, search, details and statistics |
+| `test_whitespace_values_count_as_missing_and_are_trimmed` | whitespace-only values are missing in completeness; statistics trim values (" Pflege " = "Pflege") |
+| `test_injected_duplicate_is_found` | two facilities with identical values (different IRIs) → one group, `occurrences == 2`, both IRIs |
+| `test_quote_in_input_stays_inside_the_literal` | quotes in names/queries are matched literally; `") or true or ("` returns nothing |
+| `test_empty_city_matches_nothing` | **intentional difference**: `count_facilities("")` is 0 (the CSV version wrongly counts facilities without address) |
+| `test_multi_valued_contacts_are_joined` | RDF allows several emails per facility (a CSV cell cannot): all are returned, joined with "; "; `graph_to_frames` refuses such data |
+| `test_escape_literal_used_for_every_placeholder` | placeholder values are escaped in every query |
+
+### `test_repository.py` – `DataRepository` (reference implementation)
 | Test | Checks |
 |---|---|
 | `test_count_facilities_is_case_insensitive` (×3) | Berlin/berlin/BERLIN == independent count from CSVs |
@@ -99,17 +148,17 @@ the code under test. Edge cases use tiny synthetic datasets (`tests/helpers.py:m
 ## Layer 2 – MCP protocol tests (`tests/protocol/test_server.py`)
 
 Talks to the real `server.py` through an in-memory MCP client (plus one stdio launch).
+All tools query the live SPARQL endpoint, so the smoke calls need network access. Whether
+the results are correct is checked in layer 1 (parity) and layer 3 (live).
 
 | Test | Checks |
 |---|---|
-| `test_baseline_tools_are_listed` | none of the 9 baseline tools disappeared |
+| `test_baseline_tools_are_listed` | none of the 8 baseline tools disappeared |
 | `test_every_listed_tool_has_smoke_args` | **fails when someone adds a tool without registering it in `SMOKE_ARGS`** – the prompt to add tests |
-| `test_tool_metadata_is_llm_friendly` (×9) | docstring ≥ 20 chars, valid object schema, required ⊆ properties |
-| `test_tool_call_succeeds` (×9) | call with valid args returns no MCP error and non-empty output (`count_facilities_with_api` calls the live endpoint) |
-| `test_tool_returns_valid_json_without_nan` (×7) | output parses as JSON; no bare `NaN` (the two `count_facilities*` tools return a plain number and are excluded) |
-| `test_count_facilities_returns_correct_number` | MCP result == independent CSV count |
+| `test_tool_metadata_is_llm_friendly` (×8) | docstring ≥ 20 chars, valid object schema, required ⊆ properties |
+| `test_tool_call_succeeds` (×8) | call with valid args returns no MCP error and non-empty output |
+| `test_tool_returns_valid_json_without_nan` (×7) | output parses as JSON; no bare `NaN` (`count_facilities` returns a plain number and is excluded) |
 | `test_umlauts_are_not_escaped` | `ensure_ascii=False` works end-to-end |
-| `test_search_services_output_matches_csv` | tool output size == CSV count |
 | `test_missing_required_argument_is_an_error` | error names the missing argument |
 | `test_wrong_argument_type_is_an_error` | wrong type rejected |
 | `test_unknown_tool_is_an_error` | unknown tool → error |
@@ -117,26 +166,43 @@ Talks to the real `server.py` through an in-memory MCP client (plus one stdio la
 
 ## Layer 3 – SPARQL API (`tests/api/test_sparql.py`)
 
-Tests the SPARQL client (`src/sparql_client.py`), the query files in `sparql_queries/`
-(naming schema, API and limits explained in `QUERIES.md`) and the
-`count_facilities_with_api` tool. The first five tests run offline. The rest query the live
-endpoint (`$SPARQL_ENDPOINT`) and are **skipped** if an `ASK {}` probe fails. Expected counts
-come from a differently shaped reference query
-(`list_facility_cities_by_city_substring.rq`: broad substring match, exact city match
-done in Python), not from the code under test. The endpoint holds the whole federated
-directory (all providers, not just AWO), so these counts differ from the CSV-based `count_facilities`.
+Integration tests: real `.rq` files, real `SparqlClient`, the live endpoint
+(`$SPARQL_ENDPOINT`) and the real MCP server. API, naming schema and limits are explained in
+`QUERIES.md`. The first five tests run offline. The rest are **skipped** if an `ASK {}`
+probe fails. The live data is the whole federated directory (~37k facilities, all providers),
+so numbers differ from the AWO CSVs. These tests therefore check consistency, not fixed
+numbers.
+
+To keep the load on the public endpoint low, each query is sent **once per test run**:
+`CachingSparqlClient` keeps the result of every query, and `mcp_call_once` keeps the result
+of every (tool, arguments) MCP call. The protocol layer shares these results. A full run
+of layers 2 and 3 sends about 47 requests, one at a time (~50 s; before caching it was
+115 requests and ~2 min). Each heavy query (completeness, statistics, duplicates) runs
+twice: once inside the MCP server and once in the test client to compare against. Reference counts come from a differently shaped query
+(`list_facility_cities_by_city_substring.rq`: broad substring match, exact city match done
+in Python).
 
 | Test | Checks |
 |---|---|
 | `test_escape_literal_escapes_quotes_and_backslashes` | quotes, backslashes and newlines are escaped for a SPARQL string literal |
 | `test_load_query_embeds_escaped_city` | `load_query` fills `{{city}}` in `count_facilities_by_city.rq` with the escaped value |
 | `test_load_query_without_required_param_raises` | a missing placeholder value raises `ValueError` naming the parameter |
-| `test_query_files_follow_naming_convention` (×1 per `.rq` file) | file name matches `<action>_<entity>_by_<filter>.rq` and has `# Params:` and `# Used by:` header comments |
+| `test_query_files_follow_naming_convention` (×1 per `.rq` file) | name matches `<action>_<entity>[_by_<param>][_per_<group>].rq`; every `{{param}}` is named after `_by_`; `_per_` queries use `GROUP BY`; `# Params:` and `# Used by:` header present |
 | `test_count_matches_independent_query` (×3) | Berlin, München, Köln: `count_facilities` == count from the reference query (and > 0) |
 | `test_city_match_is_case_insensitive` | Berlin/berlin/BERLIN give the same count |
 | `test_unknown_city_returns_zero` | unknown city → 0 |
 | `test_query_injection_does_not_widen_match` | a city containing `") or true or ("` returns 0: the input stays inside the literal |
-| `test_mcp_tool_returns_api_count` | MCP call `count_facilities_with_api(Berlin)` == reference count |
+| `test_mcp_count_facilities_returns_reference_count` | MCP call `count_facilities(Berlin)` == reference count |
+| `test_search_facilities_matches_count_and_reference` | `search_facilities(Berlin)` returns exactly the reference facilities, as many as `count_facilities` |
+| `test_search_facilities_result_shape_and_city` | 8 keys per result; every result is in Berlin (any case) |
+| `test_get_facility_details_known_facility` | Drehscheibe: names contain the query; org-00416a783a9b found with Berlin address and SPI provider |
+| `test_get_facility_details_unknown_name_is_empty` | unknown name → `[]` |
+| `test_search_services_every_result_matches` | every service contains "suchtberatung" in name, category or audience; no service twice |
+| `test_detect_duplicates_structure` | only known datasets; each group has `occurrences == len(iris) ≥ 2` and no IRI column |
+| `test_check_completeness_consistent` | rows == dataset sizes; IRI never missing; cells and missing counts add up; percentages 0–100 |
+| `test_generate_statistics_consistent` | with + without address/provider == facility total; Berlin in `facilities_by_city` == `count_facilities`; per-provider and per-category sums are plausible |
+| `test_compare_facilities_equals_two_detail_lookups` | both sides == `get_facility_details` for each name, both non-empty |
+| `test_mcp_tool_returns_client_result` (×8) | every tool called over MCP returns exactly what `SparqlClient` returns (JSON round trip) |
 
 ## Layer 4 – Connection smoke (`tests/llm/test_connection.py`)
 | Test | Checks |
@@ -167,9 +233,9 @@ Cases (`tests/evals/cases.json`): `count-berlin`, `search-facilities-berlin`,
 
 ### Testing a new feature
 1. Add valid arguments to `SMOKE_ARGS` in `tests/protocol/test_server.py`.
-2. Add unit tests for the repository logic in `tests/unit/`. For a SPARQL-backed tool, put
-   the query in `sparql_queries/<action>_<entity>_by_<filter>.rq`, load it with
-   `load_query(...)`, and add tests in `tests/api/`.
+2. Put the query in `sparql_queries/` (naming schema in `QUERIES.md`), add a `SparqlClient`
+   method, and add tests: offline ones in `tests/unit/` (`make_sources("""<Turtle>""")` or
+   `LocalSparqlClient(load_graph(...))`) and live ones in `tests/api/`.
 3. Add an entry to `tests/evals/cases.json`:
    ```json
    {"id": "my-feature", "prompt": "Natural-language question",
