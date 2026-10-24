@@ -28,8 +28,9 @@ ANSI = re.compile(r"\x1b\[[0-9;]*m")
 LAYERS = {
     "unit": "1 · Unit",
     "protocol": "2 · MCP protocol",
-    "llm": "3 · Connection",
-    "evals": "4 · LLM tool-calling evals",
+    "api": "3 · SPARQL API",
+    "llm": "4 · Connection",
+    "evals": "5 · LLM tool-calling evals",
 }
 
 STATE = None  # set in pytest_configure when the dashboard is enabled

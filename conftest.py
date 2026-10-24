@@ -48,8 +48,8 @@ def pytest_addoption(parser):
 
 
 def pytest_collection_modifyitems(items):
-    """Run fast layers first: unit, protocol, connection, then the slow LLM evals."""
-    order = {"unit": 0, "protocol": 1, "llm": 2, "evals": 3}
+    """Run fast layers first: unit, protocol, SPARQL API, connection, then the slow LLM evals."""
+    order = {"unit": 0, "protocol": 1, "api": 2, "llm": 3, "evals": 4}
 
     def layer(item):
         parts = Path(str(item.path)).resolve().relative_to(ROOT).parts

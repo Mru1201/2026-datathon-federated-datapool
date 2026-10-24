@@ -16,6 +16,7 @@ from conftest import ROOT
 # tool name -> valid arguments for a smoke call
 SMOKE_ARGS = {
     "count_facilities": {"city": "Berlin"},
+    "count_facilities_with_api": {"city": "Berlin"},
     "search_facilities": {"city": "Berlin"},
     "get_facility_details": {"name": "Drehscheibe"},
     "search_services": {"query": "Suchtberatung"},
@@ -24,7 +25,7 @@ SMOKE_ARGS = {
     "generate_statistics": {},
     "compare_facilities": {"facility_1": "Drehscheibe", "facility_2": "Metropolitankapitel"},
 }
-JSON_TOOLS = [t for t in SMOKE_ARGS if t != "count_facilities"]
+JSON_TOOLS = [t for t in SMOKE_ARGS if not t.startswith("count_facilities")]
 
 
 @pytest.fixture(scope="module")

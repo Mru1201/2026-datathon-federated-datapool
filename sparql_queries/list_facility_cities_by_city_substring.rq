@@ -1,0 +1,11 @@
+# List facility/city pairs whose city contains the given text (case-insensitive).
+# Params: {{city}}
+# Used by: tests/api/test_sparql.py (independent reference for count_facilities_by_city)
+PREFIX schema: <http://schema.org/>
+PREFIX org: <http://www.w3.org/ns/org#>
+
+SELECT DISTINCT ?facility ?city WHERE {
+    ?facility a org:OrganizationalUnit ;
+              schema:address/schema:addressLocality ?city .
+    FILTER(CONTAINS(LCASE(STR(?city)), LCASE("{{city}}")))
+}

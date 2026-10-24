@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 
 from src.data_loader import DataLoader
 from src.data_repository import DataRepository
+from src.sparql_client import SparqlClient
 
 
 # --------------------------------------------------
@@ -26,6 +27,8 @@ loader = DataLoader(DATA_DIR)
 datasets = loader.load_all()
 
 repository = DataRepository(datasets)
+
+sparql = SparqlClient()
 
 
 # --------------------------------------------------
@@ -84,6 +87,21 @@ def count_facilities(city: str) -> int:
     """
 
     return repository.count_facilities(city)
+
+@mcp.tool()
+def count_facilities_with_api(city: str) -> int:
+    """
+    Count facilities in a city using the live SPARQL API of the
+    federated directory of social support services in Germany.
+
+    Unlike count_facilities, this covers all providers in the
+    directory (not only the local AWO CSV data).
+
+    Args:
+        city: City name, for example "Berlin".
+    """
+
+    return sparql.count_facilities(city)
 
 @mcp.tool()
 def detect_duplicates() -> str:

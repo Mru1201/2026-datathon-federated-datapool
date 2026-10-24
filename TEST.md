@@ -1,15 +1,16 @@
 # Testing
 
-Four layers, fastest first. Every assertion carries a message that says **what was
+Five layers, fastest first. Every assertion carries a message that says **what was
 checked, what was expected, what was found, and where** (dataset / tool / model /
 case), so a red test tells you where to look without a debugger.
 
 | Layer | Folder | Needs | Runs in CI |
 |---|---|---|---|
 | 1. Unit | `tests/unit/` | nothing | every push/PR (hosted runner) |
-| 2. MCP protocol | `tests/protocol/` | nothing | every push/PR (hosted runner) |
-| 3. Connection smoke | `tests/llm/` | Open WebUI + API key | manual (self-hosted runner) |
-| 4. Tool-calling evals | `tests/evals/` | Open WebUI + API key | manual (self-hosted runner) |
+| 2. MCP protocol | `tests/protocol/` | nothing (SPARQL endpoint for the `count_facilities_with_api` smoke calls) | every push/PR (hosted runner) |
+| 3. SPARQL API | `tests/api/` | SPARQL endpoint (live tests skip if unreachable) | every push/PR (hosted runner) |
+| 4. Connection smoke | `tests/llm/` | Open WebUI + API key | manual (self-hosted runner) |
+| 5. Tool-calling evals | `tests/evals/` | Open WebUI + API key | manual (self-hosted runner) |
 
 ## Running
 
@@ -17,7 +18,8 @@ case), so a red test tells you where to look without a debugger.
 conda activate mcp
 pip install -r requirements-dev.txt          # once
 
-pytest -m "not llm"                           # layers 1+2, ~2 s, no network
+pytest -m "not llm"                           # layers 1-3, ~10 s, needs the SPARQL endpoint
+pytest tests/api                              # layer 3 only: SPARQL queries + count_facilities_with_api
 pytest -m llm tests/llm                       # is Open WebUI/Ollama reachable?
 pytest -m llm tests/evals                     # default model (OPENWEBUI_MODEL or first listed)
 pytest -m llm tests/evals --models qwen3:8b,gemma4:12b --runs 3 --pass-threshold 0.67
@@ -26,7 +28,8 @@ pytest -k count-berlin -m llm tests/evals     # a single eval case
 ```
 
 Config lives in `.env` (see `.env.example`): `OPENWEBUI_URL`, `OPENWEBUI_API_KEY`,
-optional `OPENWEBUI_MODEL`, `EVAL_MODELS`, `EVAL_RUNS`, `EVAL_PASS_THRESHOLD`.
+optional `OPENWEBUI_MODEL`, `EVAL_MODELS`, `EVAL_RUNS`, `EVAL_PASS_THRESHOLD`,
+`SPARQL_ENDPOINT` (default `https://sosuse.correlaid.org/directory/sparql`).
 Eval runs write `reports/eval-report.md` and `.json` (and the GitHub job summary).
 
 ## Live dashboard
@@ -99,11 +102,11 @@ Talks to the real `server.py` through an in-memory MCP client (plus one stdio la
 
 | Test | Checks |
 |---|---|
-| `test_baseline_tools_are_listed` | none of the 8 baseline tools disappeared |
+| `test_baseline_tools_are_listed` | none of the 9 baseline tools disappeared |
 | `test_every_listed_tool_has_smoke_args` | **fails when someone adds a tool without registering it in `SMOKE_ARGS`** – the prompt to add tests |
-| `test_tool_metadata_is_llm_friendly` (×8) | docstring ≥ 20 chars, valid object schema, required ⊆ properties |
-| `test_tool_call_succeeds` (×8) | call with valid args returns no MCP error and non-empty output |
-| `test_tool_returns_valid_json_without_nan` (×7) | output parses as JSON; no bare `NaN` |
+| `test_tool_metadata_is_llm_friendly` (×9) | docstring ≥ 20 chars, valid object schema, required ⊆ properties |
+| `test_tool_call_succeeds` (×9) | call with valid args returns no MCP error and non-empty output (`count_facilities_with_api` calls the live endpoint) |
+| `test_tool_returns_valid_json_without_nan` (×7) | output parses as JSON; no bare `NaN` (the two `count_facilities*` tools return a plain number and are excluded) |
 | `test_count_facilities_returns_correct_number` | MCP result == independent CSV count |
 | `test_umlauts_are_not_escaped` | `ensure_ascii=False` works end-to-end |
 | `test_search_services_output_matches_csv` | tool output size == CSV count |
@@ -112,13 +115,36 @@ Talks to the real `server.py` through an in-memory MCP client (plus one stdio la
 | `test_unknown_tool_is_an_error` | unknown tool → error |
 | `test_server_starts_over_stdio` | `python server.py` starts and completes the MCP handshake |
 
-## Layer 3 – Connection smoke (`tests/llm/test_connection.py`)
+## Layer 3 – SPARQL API (`tests/api/test_sparql.py`)
+
+Tests the SPARQL client (`src/sparql_client.py`), the query files in `sparql_queries/`
+(naming schema, API and limits explained in `QUERIES.md`) and the
+`count_facilities_with_api` tool. The first five tests run offline. The rest query the live
+endpoint (`$SPARQL_ENDPOINT`) and are **skipped** if an `ASK {}` probe fails. Expected counts
+come from a differently shaped reference query
+(`list_facility_cities_by_city_substring.rq`: broad substring match, exact city match
+done in Python), not from the code under test. The endpoint holds the whole federated
+directory (all providers, not just AWO), so these counts differ from the CSV-based `count_facilities`.
+
+| Test | Checks |
+|---|---|
+| `test_escape_literal_escapes_quotes_and_backslashes` | quotes, backslashes and newlines are escaped for a SPARQL string literal |
+| `test_load_query_embeds_escaped_city` | `load_query` fills `{{city}}` in `count_facilities_by_city.rq` with the escaped value |
+| `test_load_query_without_required_param_raises` | a missing placeholder value raises `ValueError` naming the parameter |
+| `test_query_files_follow_naming_convention` (×1 per `.rq` file) | file name matches `<action>_<entity>_by_<filter>.rq` and has `# Params:` and `# Used by:` header comments |
+| `test_count_matches_independent_query` (×3) | Berlin, München, Köln: `count_facilities` == count from the reference query (and > 0) |
+| `test_city_match_is_case_insensitive` | Berlin/berlin/BERLIN give the same count |
+| `test_unknown_city_returns_zero` | unknown city → 0 |
+| `test_query_injection_does_not_widen_match` | a city containing `") or true or ("` returns 0: the input stays inside the literal |
+| `test_mcp_tool_returns_api_count` | MCP call `count_facilities_with_api(Berlin)` == reference count |
+
+## Layer 4 – Connection smoke (`tests/llm/test_connection.py`)
 | Test | Checks |
 |---|---|
 | `test_lists_models` | `GET /api/models` → 200 with ≥ 1 model (URL, API key, Ollama link) |
 | `test_chat_completion` | a plain chat reply comes back (HTTP status + body shown on failure) |
 
-## Layer 4 – Tool-calling evals (`tests/evals/`)
+## Layer 5 – Tool-calling evals (`tests/evals/`)
 
 One test per **(model × case)**, repeated `--runs` times. A model gets the prompt plus the
 real server's tool schemas, its tool calls are executed on the real MCP server, results are
@@ -141,7 +167,9 @@ Cases (`tests/evals/cases.json`): `count-berlin`, `search-facilities-berlin`,
 
 ### Testing a new feature
 1. Add valid arguments to `SMOKE_ARGS` in `tests/protocol/test_server.py`.
-2. Add unit tests for the repository logic in `tests/unit/`.
+2. Add unit tests for the repository logic in `tests/unit/`. For a SPARQL-backed tool, put
+   the query in `sparql_queries/<action>_<entity>_by_<filter>.rq`, load it with
+   `load_query(...)`, and add tests in `tests/api/`.
 3. Add an entry to `tests/evals/cases.json`:
    ```json
    {"id": "my-feature", "prompt": "Natural-language question",
@@ -149,12 +177,13 @@ Cases (`tests/evals/cases.json`): `count-berlin`, `search-facilities-berlin`,
     "answer_contains": ["optional text the final answer must contain"]}
    ```
    `expect_args` values match case-insensitively as substrings.
-4. Run `pytest -m llm tests/evals --models all --runs 3`.
+4. Add a row for each new test to the tables in this file (the dashboard shows it as *Expected*).
+5. Run `pytest -m llm tests/evals --models all --runs 3`.
 
 ## CI
 
-* `.github/workflows/tests.yml` – layers 1+2 on every push/PR, GitHub-hosted, free.
-* `.github/workflows/llm-evals.yml` – layers 3+4, **manual** (Actions → "LLM evals" →
+* `.github/workflows/tests.yml` – layers 1–3 on every push/PR, GitHub-hosted, free.
+* `.github/workflows/llm-evals.yml` – layers 4+5, **manual** (Actions → "LLM evals" →
   Run workflow; choose models, runs, threshold). Runs on a self-hosted runner because
   Open WebUI is on `localhost`. Uploads `eval-report` as an artifact.
 
