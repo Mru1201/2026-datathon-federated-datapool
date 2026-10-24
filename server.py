@@ -7,7 +7,7 @@ sparql_queries/ against the live SPARQL endpoint. Run with `python server.py` (s
 import json
 import sys
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from src.sparql_client import SparqlClient
 
@@ -141,6 +141,33 @@ def compare_facilities(facility_1: str, facility_2: str) -> str:
     """
 
     return to_json(sparql.compare_facilities(facility_1, facility_2))
+
+
+@mcp.tool()
+def list_providers() -> str:
+    """
+    List all provider organisations in the federated directory.
+
+    Returns:
+        JSON containing provider names, websites, and addresses.
+    """
+
+    return to_json(sparql.list_providers())
+
+
+@mcp.tool()
+def search_by_postal_code(postal_code: str) -> str:
+    """
+    Find welfare facilities by German postal code.
+
+    Args:
+        postal_code: Five-digit German postal code, for example "10115".
+
+    Returns:
+        JSON containing facilities located in that postal code area.
+    """
+
+    return to_json(sparql.search_by_postal_code(postal_code))
 
 
 if __name__ == "__main__":

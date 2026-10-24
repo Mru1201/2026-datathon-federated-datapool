@@ -367,6 +367,40 @@ class SparqlClient:
             "services_by_audience": self.value_counts("count_services_per_audience"),
         }
 
+    def list_providers(self) -> list[dict]:
+        """List all provider organisations."""
+
+        return [
+            {
+                "iri": row["provider"],
+                "name": row["name"],
+                "homepage": row["homepage"],
+                "address": {
+                    "street": row["street"],
+                    "postal_code": row["postal_code"],
+                    "city": row["city"],
+                },
+            }
+            for row in self.select("list_providers")
+        ]
+
+    def search_by_postal_code(self, postal_code: str) -> list[dict]:
+        """Find facilities by German postal code."""
+
+        return [
+            {
+                "iri": row["facility"],
+                "name": row["name"],
+                "street": row["street"],
+                "postal_code": row["postal_code"],
+                "city": row["city"],
+                "telephone": row["telephone"],
+                "email": row["email"],
+                "homepage": row["homepage"],
+            }
+            for row in self.select("list_facilities_by_postal_code", postal_code=postal_code)
+        ]
+
     def compare_facilities(self, facility_1: str, facility_2: str) -> list[dict]:
         """Compare two facilities by name."""
 
