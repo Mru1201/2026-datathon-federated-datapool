@@ -29,6 +29,25 @@ Config lives in `.env` (see `.env.example`): `OPENWEBUI_URL`, `OPENWEBUI_API_KEY
 optional `OPENWEBUI_MODEL`, `EVAL_MODELS`, `EVAL_RUNS`, `EVAL_PASS_THRESHOLD`.
 Eval runs write `reports/eval-report.md` and `.json` (and the GitHub job summary).
 
+## Live dashboard
+
+`pytest` opens a dashboard in your browser (`http://127.0.0.1:8765`) and fills it as tests run:
+
+* every test listed by layer and file, with status (pending / running / passed / failed / skipped / expected fail), duration and a progress bar
+* **Expected** – the description from the tables in this file (for evals: prompt, tool, arguments and answer text from `cases.json`)
+* **Actual** – every assertion with the values pytest evaluated (for `==` checks: *Actual* is the left side, *Expected* the right side – keep that order when writing tests), per-run tool calls and answers for evals, and the failure message plus traceback for failures (failed tests open automatically)
+* when the run ends a standalone copy is saved to `reports/dashboard.html`
+
+The expected text is read from the `| \`test_name\` | description |` rows in this file, so keep those rows up to date when you add tests.
+
+```bash
+pytest                          # dashboard opens automatically
+pytest --dashboard-no-open      # start it but don't open a browser tab
+pytest --dashboard-hold         # keep the page served after the run (Ctrl+C to quit)
+pytest --dashboard-port 9000    # different port (default 8765, or $DASHBOARD_PORT)
+pytest --no-dashboard           # off (also off automatically when $CI is set)
+```
+
 ## Layer 1 – Unit tests (`tests/unit/`)
 
 Expected values are computed from the raw CSVs with the `csv` module, independent of
@@ -61,7 +80,8 @@ the code under test. Edge cases use tiny synthetic datasets (`tests/helpers.py:m
 | `test_get_facility_details_treats_query_literally` | `".*"` is not a regex; `"(HLS6)"` works |
 | `test_get_facility_details_includes_provider_when_linked` | provider attached via parentOrganization |
 | `test_search_services_count_matches_csv` (×4) | name/category/audience substring matches == CSV count |
-| `test_search_services_result_shape` / `_no_match_is_empty` | keys; no match → `[]` |
+| `test_search_services_result_shape` | each result has iri, name, category, audience |
+| `test_search_services_no_match_is_empty` | no match → `[]` |
 | `test_detect_duplicates_clean_data_reports_nothing` | real data has no exact duplicates |
 | `test_detect_duplicates_finds_injected_duplicate` | an injected duplicate row is found with `occurrences == 2` |
 | `test_check_completeness_structure_and_ranges` | rows/columns/cells correct, percentages in 0–100 |
@@ -70,7 +90,8 @@ the code under test. Edge cases use tiny synthetic datasets (`tests/helpers.py:m
 | `test_statistics_dataset_sizes` | sizes == CSV row counts |
 | `test_statistics_city_counts_agree_with_count_facilities` | stats and count tool agree |
 | `test_statistics_relationships_add_up` | with + without address/provider == facility total |
-| `test_compare_facilities_returns_both_sides` / `_unknown_name_gives_empty_matches` | both searches returned in order; unknown → empty matches |
+| `test_compare_facilities_returns_both_sides` | both searches returned in order, each with a match |
+| `test_compare_facilities_unknown_name_gives_empty_matches` | unknown facility → empty matches |
 
 ## Layer 2 – MCP protocol tests (`tests/protocol/test_server.py`)
 

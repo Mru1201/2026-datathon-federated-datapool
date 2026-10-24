@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test dashboard</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --surface: #ffffff; --surface2: #f0f2f5; --border: #dde1e7;
+    --text: #1b1f24; --muted: #5d6673;
+    --pass: #1f8a4c; --fail: #d1293d; --warn: #b7791f; --run: #2b6fd6; --pending: #9aa3af;
+    --pass-bg: #e6f5ec; --fail-bg: #fdecee; --warn-bg: #fbf3e0; --run-bg: #e8f0fc;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14171b; --surface: #1c2025; --surface2: #242930; --border: #323943;
+      --text: #e6e9ed; --muted: #98a2af;
+      --pass: #4cc582; --fail: #ff6b7d; --warn: #e3b354; --run: #6aa3ff; --pending: #6b7480;
+      --pass-bg: #17301f; --fail-bg: #3a1c21; --warn-bg: #352c15; --run-bg: #1a2a45;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+  header { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 16px 0 12px;
+           border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  h1 { font-size: 20px; margin: 0; }
+  .top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .pill { padding: 2px 10px; border-radius: 999px; font-weight: 600; font-size: 12px; }
+  .pill.running { background: var(--run-bg); color: var(--run); }
+  .pill.ok { background: var(--pass-bg); color: var(--pass); }
+  .pill.bad { background: var(--fail-bg); color: var(--fail); }
+  .spacer { flex: 1; }
+  .muted { color: var(--muted); }
+  .bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--surface2);
+         border: 1px solid var(--border); margin: 12px 0 8px; }
+  .bar span { display: block; height: 100%; transition: width .3s; }
+  .bar .p { background: var(--pass); } .bar .f { background: var(--fail); }
+  .bar .w { background: var(--warn); } .bar .r { background: var(--run); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  .stats { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .chip { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 8px;
+          padding: 4px 10px; cursor: pointer; font: inherit; }
+  .chip[aria-pressed="true"] { border-color: var(--run); box-shadow: 0 0 0 1px var(--run); }
+  .chip b { font-variant-numeric: tabular-nums; }
+  input[type=search] { border: 1px solid var(--border); background: var(--surface); color: var(--text);
+                       border-radius: 8px; padding: 5px 10px; font: inherit; min-width: 180px; }
+  .layer { margin: 22px 0 8px; font-size: 13px; font-weight: 700; text-transform: uppercase;
+           letter-spacing: .05em; color: var(--muted); display: flex; gap: 10px; align-items: baseline; }
+  .file { margin: 12px 0 4px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .row { display: grid; grid-template-columns: 24px 1fr auto 18px; gap: 10px; align-items: center;
+         padding: 8px 12px; cursor: pointer; border-top: 1px solid var(--border); }
+  .row:first-child { border-top: 0; }
+  .row:hover { background: var(--surface2); }
+  .icon { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+          font-size: 12px; font-weight: 700; color: #fff; }
+  .passed .icon { background: var(--pass); } .failed .icon { background: var(--fail); }
+  .skipped .icon, .xfailed .icon, .xpassed .icon { background: var(--warn); }
+  .running .icon { background: var(--run); animation: pulse 1s infinite; }
+  .pending .icon { background: var(--pending); }
+  .title { overflow: hidden; text-overflow: ellipsis; }
+  .title small { color: var(--muted); font-family: var(--mono); margin-left: 8px; font-size: 12px; }
+  .param { background: var(--surface2); border-radius: 6px; padding: 1px 6px; font-family: var(--mono);
+           font-size: 12px; margin-left: 6px; }
+  .dur { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; white-space: nowrap; }
+  .chev { color: var(--muted); transition: transform .15s; }
+  .open .chev { transform: rotate(90deg); }
+  .detail { display: none; padding: 12px 14px 16px; background: var(--surface2); border-top: 1px solid var(--border); }
+  .open + .detail { display: block; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 760px) { .cols { grid-template-columns: 1fr; } }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+  .panel h4 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .panel.fail { border-color: var(--fail); }
+  pre, code { font-family: var(--mono); font-size: 12px; }
+  pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  td, th { text-align: left; vertical-align: top; padding: 4px 6px; border-top: 1px solid var(--border); word-break: break-word; }
+  th { color: var(--muted); font-weight: 600; border-top: 0; }
+  td.ok { color: var(--pass); } td.bad { color: var(--fail); }
+  .kv { margin: 0 0 6px; } .kv b { display: inline-block; min-width: 90px; color: var(--muted); font-weight: 600; }
+  .run-item { padding: 6px 0; border-top: 1px solid var(--border); }
+  .run-item:first-of-type { border-top: 0; }
+  .tag { display: inline-block; padding: 0 7px; border-radius: 6px; font-size: 12px; font-weight: 600; margin-right: 6px; }
+  .tag.p { background: var(--pass-bg); color: var(--pass); } .tag.f { background: var(--fail-bg); color: var(--fail); }
+  details summary { cursor: pointer; color: var(--muted); margin-top: 8px; }
+  .empty { padding: 40px; text-align: center; color: var(--muted); }
+  button.link { background: none; border: 0; color: var(--run); cursor: pointer; font: inherit; padding: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="top">
+      <h1>Test dashboard</h1>
+      <span id="pill" class="pill running">Connecting…</span>
+      <span id="current" class="muted"></span>
+      <span class="spacer"></span>
+      <span id="elapsed" class="muted"></span>
+    </div>
+    <div class="bar" id="bar" role="progressbar" aria-label="Test progress"></div>
+    <div class="stats" id="stats"></div>
+  </header>
+  <main id="list"><div class="empty">Waiting for pytest…</div></main>
+</div>
+<!--STATE-->
+<script>
+"use strict";
+const STATUS_ICON = { passed: "✓", failed: "✕", skipped: "–", xfailed: "!", xpassed: "!", running: "●", pending: "" };
+const STATUS_LABEL = { passed: "Passed", failed: "Failed", skipped: "Skipped", xfailed: "Expected fail", xpassed: "Unexpected pass", running: "Running", pending: "Pending" };
+const GROUPS = [ ["all", "All"], ["passed", "Passed"], ["failed", "Failed"], ["warn", "Skipped / xfail"], ["running", "Running"], ["pending", "Pending"] ];
+
+let state = null, lastRev = -1, filter = "all", query = "", offset = 0, live = true;
+const open = new Set(JSON.parse(sessionStorageGet("open") || "[]"));
+let autoOpened = new Set();
+
+function sessionStorageGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+function sessionStorageSet(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} }
+
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  return el;
+}
+
+const bucket = s => (s === "skipped" || s === "xfailed" || s === "xpassed") ? "warn" : s;
+const fmtDur = d => d == null ? "" : d < 1 ? Math.round(d * 1000) + " ms" : d.toFixed(1) + " s";
+const fmtTime = s => { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+
+function counts(tests) {
+  const c = { all: tests.length, passed: 0, failed: 0, warn: 0, running: 0, pending: 0 };
+  for (const t of tests) c[bucket(t.status)]++;
+  return c;
+}
+
+function renderHeader(s) {
+  const c = counts(s.tests), done = c.passed + c.failed + c.warn;
+  const pill = document.getElementById("pill");
+  if (s.status === "finished") {
+    const bad = c.failed > 0;
+    pill.className = "pill " + (bad ? "bad" : "ok");
+    pill.textContent = bad ? `Finished — ${c.failed} failed` : "Finished — all passed";
+  } else {
+    pill.className = "pill running";
+    pill.textContent = s.status === "collecting" ? "Collecting…" : "Running";
+  }
+  const cur = s.tests.find(t => t.id === s.current && t.status === "running");
+  document.getElementById("current").textContent = cur ? `${cur.title}${cur.param ? " [" + cur.param + "]" : ""}${cur.note ? " — " + cur.note : ""}` : "";
+  const pct = n => (c.all ? (100 * n / c.all) : 0) + "%";
+  const bar = document.getElementById("bar");
+  bar.setAttribute("aria-valuenow", done); bar.setAttribute("aria-valuemax", c.all);
+  bar.replaceChildren(
+    h("span", { class: "p", style: "width:" + pct(c.passed) }), h("span", { class: "f", style: "width:" + pct(c.failed) }),
+    h("span", { class: "w", style: "width:" + pct(c.warn) }), h("span", { class: "r", style: "width:" + pct(c.running) }));
+  const stats = document.getElementById("stats");
+  stats.replaceChildren(
+    ...GROUPS.map(([key, label]) => h("button", { class: "chip", "aria-pressed": String(filter === key),
+      onclick: () => { filter = key; render(); } }, label + " ", h("b", {}, c[key]))),
+    h("span", { class: "muted" }, `${done} / ${c.all} done`),
+    h("span", { class: "spacer" }),
+    h("input", { type: "search", placeholder: "Filter tests…", value: query, "aria-label": "Filter tests",
+      oninput: e => { query = e.target.value; renderList(); } }),
+    h("button", { class: "link", onclick: () => { s.tests.forEach(t => open.add(t.id)); persist(); renderList(); } }, "Expand all"),
+    h("button", { class: "link", onclick: () => { open.clear(); persist(); renderList(); } }, "Collapse all"));
+  const q = document.querySelector("input[type=search]");
+  if (q && document.activeElement && document.activeElement.type === "search") q.focus();
+}
+
+function persist() { sessionStorageSet("open", JSON.stringify([...open])); }
+
+function kv(label, value) { return h("div", { class: "kv" }, h("b", {}, label), value); }
+
+function expectedPanel(t) {
+  const p = h("div", { class: "panel" }, h("h4", {}, "Expected"));
+  if (t.expected) p.append(h("div", { class: "kv" }, t.expected));
+  const e = t.expected_struct;
+  if (e) {
+    p.append(kv("Prompt", e.prompt), kv("Tool", h("code", {}, e.tool)), kv("Arguments", h("code", {}, JSON.stringify(e.args))));
+    if (e.answer_contains.length) p.append(kv("Answer has", h("code", {}, JSON.stringify(e.answer_contains))));
+  }
+  if (!t.expected && !e) p.append(h("span", { class: "muted" }, "No description in TEST.md yet."));
+  if (t.skip_reason) p.append(kv(t.status === "xfailed" ? "Known issue" : "Reason", t.skip_reason));
+  return p;
+}
+
+function actualPanel(t) {
+  const p = h("div", { class: "panel" + (t.status === "failed" ? " fail" : "") }, h("h4", {}, "Actual"));
+  if (t.status === "pending") return (p.append(h("span", { class: "muted" }, "Not run yet.")), p);
+  if (t.status === "running") return (p.append(h("span", { class: "muted" }, t.note || "Running…")), p);
+  if (t.eval_runs) {
+    t.eval_runs.forEach(r => {
+      const calls = r.calls.map(([n, a]) => n + "(" + JSON.stringify(a) + ")").join("; ") || "none";
+      p.append(h("div", { class: "run-item" },
+        h("span", { class: "tag " + (r.passed ? "p" : "f") }, (r.passed ? "run " : "run ") + r.run + (r.passed ? " passed" : " failed")),
+        h("span", { class: "muted" }, r.seconds + " s"),
+        !r.passed && kv("Stage", r.stage), !r.passed && kv("Detail", r.detail),
+        kv("Tool calls", h("code", {}, calls)), kv("Answer", r.answer ? r.answer.slice(0, 300) : "—")));
+    });
+  }
+  if (t.assertions.length) {
+    const hasCmp = t.assertions.some(a => a.actual != null);
+    const table = h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Check"), h("th", {}, hasCmp ? "Actual" : "Evaluated"), hasCmp && h("th", {}, "Expected"))));
+    const body = h("tbody");
+    t.assertions.forEach(a => {
+      body.append(h("tr", {}, h("td", {}, h("code", {}, a.left_src && a.right_src ? a.left_src + " == " + a.right_src : a.check)),
+        h("td", { class: "ok" }, a.actual != null ? a.actual : a.evaluated),
+        hasCmp && h("td", { class: "ok" }, a.expected != null ? a.expected : "")));
+    });
+    table.append(body); p.append(table);
+    if (t.assertions_more) p.append(h("div", { class: "muted" }, `+ ${t.assertions_more} more passing assertions`));
+  } else if (!t.eval_runs && t.status === "passed") {
+    p.append(h("span", { class: "muted" }, "Passed (no assertion values recorded)."));
+  }
+  if (t.failure) {
+    p.append(h("div", { class: "kv", style: "margin-top:8px" }, h("b", { style: "color:var(--fail)" }, t.status === "xfailed" ? "Failed (as expected)" : "Failure")),
+      h("pre", {}, t.failure));
+    if (t.failure_detail) p.append(h("details", {}, h("summary", {}, "Full traceback"), h("pre", {}, t.failure_detail)));
+  }
+  return p;
+}
+
+function renderList() {
+  if (!state) return;
+  const q = query.trim().toLowerCase();
+  const tests = state.tests.filter(t =>
+    (filter === "all" || bucket(t.status) === filter) &&
+    (!q || (t.title + " " + t.name + " " + t.param + " " + t.file + " " + t.layer).toLowerCase().includes(q)));
+  const list = document.getElementById("list");
+  if (!tests.length) { list.replaceChildren(h("div", { class: "empty" }, state.tests.length ? "No tests match." : "Waiting for pytest…")); return; }
+  const frag = document.createDocumentFragment();
+  const layers = [...new Set(tests.map(t => t.layer))].sort();
+  layers.forEach(layer => {
+    const inLayer = tests.filter(t => t.layer === layer), c = counts(inLayer);
+    frag.append(h("div", { class: "layer" }, layer, h("span", { class: "muted", style: "text-transform:none;letter-spacing:0;font-weight:400" },
+      `${c.passed} passed · ${c.failed} failed · ${c.warn} skipped/xfail · ${c.running + c.pending} to go`)));
+    [...new Set(inLayer.map(t => t.file))].forEach(file => {
+      frag.append(h("div", { class: "file" }, file));
+      const card = h("div", { class: "card" });
+      inLayer.filter(t => t.file === file).forEach(t => {
+        if (t.status === "failed" && !autoOpened.has(t.id)) { autoOpened.add(t.id); open.add(t.id); persist(); }
+        const isOpen = open.has(t.id);
+        card.append(
+          h("div", { class: "row " + t.status + (isOpen ? " open" : ""), role: "button", tabindex: "0", "aria-expanded": String(isOpen),
+            onclick: () => { isOpen ? open.delete(t.id) : open.add(t.id); persist(); renderList(); },
+            onkeydown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.target.click(); } } },
+            h("span", { class: "icon", title: STATUS_LABEL[t.status] }, STATUS_ICON[t.status]),
+            h("span", { class: "title" }, t.title, t.param && h("span", { class: "param" }, t.param), h("small", {}, t.name)),
+            h("span", { class: "dur" }, t.status === "running" ? (t.note || "running…") : fmtDur(t.duration)),
+            h("span", { class: "chev" }, "›")),
+          h("div", { class: "detail" }, h("div", { class: "cols" }, expectedPanel(t), actualPanel(t))));
+      });
+      frag.append(card);
+    });
+  });
+  list.replaceChildren(frag);
+}
+
+function render() {
+  if (!state) return;
+  renderHeader(state);
+  renderList();
+  tickElapsed();
+}
+
+function tickElapsed() {
+  if (!state) return;
+  const end = state.finished_at || (Date.now() / 1000 - offset);
+  document.getElementById("elapsed").textContent = "elapsed " + fmtTime(end - state.started);
+}
+
+async function poll() {
+  try {
+    const r = await fetch("/api/state", { cache: "no-store" });
+    const s = await r.json();
+    offset = Date.now() / 1000 - s.now;
+    if (s.rev !== lastRev) { state = s; lastRev = s.rev; render(); }
+    else { state.now = s.now; tickElapsed(); }
+    if (s.status === "finished") return;
+  } catch (e) {
+    if (state && state.status !== "finished") {
+      const pill = document.getElementById("pill");
+      pill.className = "pill bad"; pill.textContent = "Connection lost — showing last state";
+    }
+    return;
+  }
+  setTimeout(poll, 600);
+}
+
+if (window.__STATE__) { state = window.__STATE__; offset = Date.now() / 1000 - state.now; render(); }
+else { poll(); setInterval(tickElapsed, 1000); }
+</script>
+</body>
+</html>

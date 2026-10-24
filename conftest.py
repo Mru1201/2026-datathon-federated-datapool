@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+pytest_plugins = ["tests.dashboard.plugin"]
+
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
 
@@ -43,6 +45,17 @@ def pytest_addoption(parser):
         default=float(os.environ.get("EVAL_PASS_THRESHOLD", "1.0")),
         help="Fraction of runs that must pass for a (model, case) to pass.",
     )
+
+
+def pytest_collection_modifyitems(items):
+    """Run fast layers first: unit, protocol, connection, then the slow LLM evals."""
+    order = {"unit": 0, "protocol": 1, "llm": 2, "evals": 3}
+
+    def layer(item):
+        parts = Path(str(item.path)).resolve().relative_to(ROOT).parts
+        return order.get(parts[1], 9) if len(parts) > 2 else 9
+
+    items.sort(key=layer)  # stable: keeps order within a layer
 
 
 @pytest.fixture(scope="session")
