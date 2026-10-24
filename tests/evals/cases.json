@@ -1,0 +1,52 @@
+[
+  {
+    "id": "count-berlin",
+    "prompt": "How many AWO facilities are there in Berlin?",
+    "expect_tool": "count_facilities",
+    "expect_args": {"city": "Berlin"},
+    "answer_contains": ["151"]
+  },
+  {
+    "id": "search-facilities-berlin",
+    "prompt": "List the AWO facilities located in Berlin with their contact info.",
+    "expect_tool": "search_facilities",
+    "expect_args": {"city": "Berlin"}
+  },
+  {
+    "id": "facility-details",
+    "prompt": "Give me the details of the facility called Drehscheibe.",
+    "expect_tool": "get_facility_details",
+    "expect_args": {"name": "Drehscheibe"},
+    "answer_contains": ["Drehscheibe"]
+  },
+  {
+    "id": "search-services-sucht",
+    "prompt": "Which services do you offer around Suchtberatung?",
+    "expect_tool": "search_services",
+    "expect_args": {"query": "Suchtberatung"}
+  },
+  {
+    "id": "duplicates",
+    "prompt": "Are there any exact duplicate rows in the AWO datasets?",
+    "expect_tool": "detect_duplicates",
+    "expect_args": {}
+  },
+  {
+    "id": "completeness",
+    "prompt": "How complete is the AWO data? Which columns have missing values?",
+    "expect_tool": "check_completeness",
+    "expect_args": {}
+  },
+  {
+    "id": "statistics",
+    "prompt": "Give me overall statistics about the AWO datasets.",
+    "expect_tool": "generate_statistics",
+    "expect_args": {}
+  },
+  {
+    "id": "compare",
+    "prompt": "Compare the facilities Drehscheibe and Metropolitankapitel.",
+    "expect_tool": "compare_facilities",
+    "expect_args": {"facility_1": "Drehscheibe", "facility_2": "Metropolitankapitel"}
+  }
+]

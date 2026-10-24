@@ -1,0 +1,45 @@
+name: LLM evals
+
+# Runs the tool-calling evals through Open WebUI. Needs a self-hosted runner that
+# can reach Open WebUI (see TEST.md). Manual trigger only, so forks/PRs can never
+# run code on that machine.
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: "Comma-separated model ids, or 'all'"
+        default: "all"
+      runs:
+        description: "Runs per model and case"
+        default: "3"
+      pass_threshold:
+        description: "Fraction of runs that must pass (0-1)"
+        default: "0.67"
+
+jobs:
+  evals:
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 120
+    env:
+      OPENWEBUI_URL: ${{ vars.OPENWEBUI_URL || 'http://localhost:3000' }}
+      OPENWEBUI_API_KEY: ${{ secrets.OPENWEBUI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up virtualenv
+        run: |
+          "${{ vars.PYTHON_BIN || 'python3' }}" -m venv .venv-ci
+          .venv-ci/bin/pip install -q -r requirements.txt -r requirements-dev.txt
+      - name: Fast tests first
+        run: .venv-ci/bin/pytest -m "not llm" tests
+      - name: Tool-calling evals
+        run: >
+          .venv-ci/bin/pytest -m llm tests
+          --models "${{ inputs.models }}"
+          --runs "${{ inputs.runs }}"
+          --pass-threshold "${{ inputs.pass_threshold }}"
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: reports/
