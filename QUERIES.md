@@ -162,6 +162,10 @@ service matches are substrings (`CONTAINS`, no regex). Statistics trim values wi
 | `list_facilities_by_bbox.rq` | facilities with coordinates inside a box, plus contacts, hours, audience, offers and provider | `find_nearby` |
 | `get_postal_code_location_by_postal_code.rq` | average coordinates (and count) of the addresses with a postal code | `find_nearby` (search origin) |
 | `get_facility_details_by_iri.rq` | one facility by IRI: address, contacts, hours, accessibility, offers, provider, source link | `get_awo_details` |
+| `list_entity_properties_by_iri.rq` | every property of one entity (any class) with its type; `?value_is_iri` marks links | `get_entity_card` |
+| `list_linked_services_by_iri.rq` | services whose `schema:provider` is the given facility/provider | `get_entity_card` |
+| `list_service_candidates_by_query.rq` | services matching name/category/audience, with the linked facility or provider, its type, name, postal code and locality | `search_service_candidates` |
+| `list_directory_facilities_by_term.rq` | facilities where a term occurs in their own text, their address or a linked service, with every field `search_directory` filters on or summarises | `search_directory` |
 
 **Numbers and IRIs as inputs.** Placeholders may only be string literals, and the naming
 check allows one `_by_` parameter. So `list_facilities_by_bbox.rq` takes a single
@@ -170,6 +174,16 @@ Python) and splits it with `STRBEFORE`/`STRAFTER` + `xsd:double`. `get_facility_
 turns `{{iri}}` into an IRI with `IRI("{{iri}}")`; `get_awo_details` only accepts IRIs under
 `cdf:` without spaces or IRI-breaking characters. `find_nearby` ranks and filters the box in
 Python: exact distance (haversine), comma-separated terms, and accessibility.
+
+**Entity cards and linked search.** `get_entity_card`, `search_service_candidates` and
+`search_directory` come from the datathon "directory-search" contribution (originally a
+patch for the CSV version). `get_entity_card` reads all properties of one entity with a
+generic query and follows links in Python (at most two levels: service → facility →
+address/provider), so missing, dangling, mistyped and multiple links are reported instead
+of dropped. `search_directory` sends only its longest term to SPARQL
+(`list_directory_facilities_by_term.rq`); every other term, the provider filter, the
+telephone filter, paging and the summaries over all matches are applied in Python. It
+needs one term of at least 3 characters so it never scans the whole directory.
 
 ### How each tool maps to the old CSV logic
 

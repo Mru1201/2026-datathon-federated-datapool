@@ -496,6 +496,118 @@ def test_e2e_get_awo_details_unknown_iri_is_a_message_not_an_error():
     assert text.startswith("No facility found"), f"expected a 'No facility found' message, got: {text[:200]!r}"
 
 
+# ---- get_entity_card -------------------------------------------------------------
+
+def test_e2e_get_entity_card_fields_and_links_match_graph(graph):
+    iri = CDF + "org-34e986356c61"  # Frauenladen - Drogennotdienst Berlin gGmbH
+    card = call_json("get_entity_card", {"iri": iri})
+    facility = URIRef(iri)
+    assert card["status"] == "ok" and card["entity_type"] == "facility", card.get("status")
+    predicates = {"name": SCHEMA.name, "telephone": SCHEMA.telephone, "email": SCHEMA.email,
+                  "opening_hours": SCHEMA.openingHours, "accessibility": SCHEMA.accessibilitySummary,
+                  "alternate_name": SCHEMA.alternateName, "description": SCHEMA.description}
+    for key, predicate in predicates.items():
+        assert card["fields"][key] == value(graph, facility, predicate), f"get_entity_card {key}"
+        assert (key in card["missing_fields"]) == (value(graph, facility, predicate) is None), (
+            f"'{key}' listed as missing although the graph has a value, or the other way round"
+        )
+    address = card["relationships"]["address"]
+    assert address["status"] == "resolved" and address["target_id"] == str(address_of(graph, facility))
+    assert address["entity"]["fields"]["street"] == value(graph, address_of(graph, facility), SCHEMA.streetAddress)
+    services = {str(s) for s in graph.subjects(SCHEMA.provider, facility)}
+    assert {s["id"] for s in card["linked_services"]} == services and card["linked_services_total"] == len(services)
+
+
+def test_e2e_get_entity_card_service_resolves_to_its_office(graph):
+    service = URIRef(CDF + "service-04b4dec19d58")
+    card = call_json("get_entity_card", {"iri": str(service)})
+    office = graph.value(service, SCHEMA.provider)
+    provider = card["relationships"]["provider"]
+    assert card["entity_type"] == "service" and provider["status"] == "resolved"
+    assert provider["target_id"] == str(office) and provider["target_type"] == "facility"
+    assert provider["entity"]["fields"]["name"] == value(graph, office, SCHEMA.name)
+    assert card["fields"]["opening_hours"] == value(graph, service, SCHEMA.openingHours)
+    assert call_json("get_entity_card", {"iri": CDF + "nope"}, once=False)["status"] == "not_found"
+    assert call_json("get_entity_card", {"iri": 'x") } #'}, once=False)["status"] == "invalid_iri"
+
+
+# ---- search_service_candidates ---------------------------------------------------
+
+def services_matching(graph, text):
+    return {
+        str(service)
+        for service in graph.subjects(RDF.type, SCHEMA.Service)
+        if any(fold(text) in fold(str(found))
+               for predicate in (SCHEMA.name, SCHEMA.category, SCHEMA.audience)
+               for found in graph.objects(service, predicate))
+    }
+
+
+def test_e2e_search_service_candidates_total_and_offices_match_graph(graph):
+    result = call_json("search_service_candidates", {"query": "Schuldner", "limit": 25})
+    assert result["total"] == len(services_matching(graph, "schuldner")) > 0
+    assert {c["service_id"] for c in result["candidates"]} == services_matching(graph, "schuldner")
+    for candidate in result["candidates"]:
+        office = graph.value(URIRef(candidate["service_id"]), SCHEMA.provider)
+        assert candidate["provider"]["id"] == str(office), candidate["service_id"]
+        assert candidate["provider"]["name"] == value(graph, office, SCHEMA.name)
+        assert candidate["location"]["locality"] == value(graph, address_of(graph, office), SCHEMA.addressLocality)
+
+
+def test_e2e_search_service_candidates_paging_covers_every_match(graph):
+    expected = services_matching(graph, "beratung")
+    seen, offset = [], 0
+    while offset is not None:
+        page = call_json("search_service_candidates", {"query": "Beratung", "limit": 7, "offset": offset})
+        assert page["total"] == len(expected) and page["returned"] <= 7
+        seen += [c["service_id"] for c in page["candidates"]]
+        offset = page["next_offset"]
+    assert sorted(seen) == sorted(expected), "pages overlap or miss services"
+
+
+# ---- search_directory ------------------------------------------------------------
+
+def directory_matches(graph, term):
+    """Facilities with the term in their own text, their address or a linked service."""
+    own = (SCHEMA.name, SCHEMA.alternateName, SCHEMA.description, SCHEMA.category, SCHEMA.availableService,
+           SCHEMA.audience, SCHEMA.accessibilitySummary, SCHEMA.openingHours)
+    address_fields = (SCHEMA.streetAddress, SCHEMA.postalCode, SCHEMA.addressLocality)
+    service_fields = (SCHEMA.name, SCHEMA.category, SCHEMA.audience, SCHEMA.areaServed)
+
+    def has(node, predicates):
+        return any(fold(term) in fold(str(found)) for p in predicates for found in graph.objects(node, p))
+
+    return {
+        str(facility) for facility in facilities(graph)
+        if has(facility, own)
+        or any(has(address, address_fields) for address in graph.objects(facility, SCHEMA.address))
+        or any(has(service, service_fields) for service in graph.subjects(SCHEMA.provider, facility))
+    }
+
+
+def test_e2e_search_directory_matches_facility_service_or_address_text(graph):
+    result = call_json("search_directory", {"query": "Schuldner", "limit": 25})
+    expected = directory_matches(graph, "schuldner")
+    assert result["total"] == len(expected) and {h["iri"] for h in result["hits"]} == expected
+    narrow = call_json("search_directory", {"query": "Schuldner Kreuzberg", "limit": 25})
+    assert {h["iri"] for h in narrow["hits"]} == expected & directory_matches(graph, "kreuzberg")
+
+
+def test_e2e_search_directory_telephone_filter_and_summaries_cover_all_matches(graph):
+    expected = directory_matches(graph, "beratung")
+    with_phone = {iri for iri in expected if value(graph, URIRef(iri), SCHEMA.telephone)}
+    everything = call_json("search_directory", {"query": "Beratung", "limit": 3})
+    assert everything["total"] == len(expected) and everything["returned"] == 3
+    assert everything["missing_counts"]["telephone"] == len(expected - with_phone), (
+        "missing_counts must cover all matches, not only the returned page"
+    )
+    filtered = call_json("search_directory", {"query": "Beratung", "has_telephone": True, "limit": 25})
+    assert filtered["total"] == len(with_phone)
+    assert all(hit["telephone"] for hit in filtered["hits"])
+    short = call_json("search_directory", {"query": "ab"}, once=False)
+    assert short["status"] == "error", "a query without a 3+ character term must be rejected"
+
+
 # ---- find_help prompt ------------------------------------------------------------
 
 def test_e2e_find_help_prompt_is_listed_and_renders():

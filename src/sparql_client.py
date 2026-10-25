@@ -37,6 +37,7 @@ NAMESPACES = {
     "org:": "http://www.w3.org/ns/org#",
     "foaf:": "http://xmlns.com/foaf/0.1/",
     "cdf:": "https://civic-data.de/federated-directory#",
+    "dct:": "http://purl.org/dc/terms/",
 }
 
 # Dataset name -> RDF class, duplicates query and the columns that completeness and
@@ -91,6 +92,193 @@ HELP_NEEDS = {
     "addiction": ["sucht", "drogen", "alkohol"],
     "migration": ["migration", "zugewandert", "flucht"],
 }
+
+
+# ---- Entity cards and linked search (get_entity_card, search_service_candidates,
+# search_directory). Ported from the datathon "directory-search" contribution, which
+# ran on the CSV sample; here they read the live directory. -------------------------
+
+# RDF class -> entity type name used in the tool results.
+ENTITY_TYPES = {
+    "org:OrganizationalUnit": "facility",
+    "schema:Service": "service",
+    "schema:Organization": "provider",
+    "schema:PostalAddress": "address",
+}
+
+# Entity type -> {result field: property}. Every field is reported, None when not recorded.
+ENTITY_FIELDS = {
+    "facility": {
+        "name": "schema:name",
+        "alternate_name": "schema:alternateName",
+        "description": "schema:description",
+        "category": "schema:category",
+        "service_description": "schema:availableService",
+        "audience": "schema:audience",
+        "telephone": "schema:telephone",
+        "email": "schema:email",
+        "homepage": "foaf:homepage",
+        "source_page": "schema:mainEntityOfPage",
+        "opening_hours": "schema:openingHours",
+        "accessibility": "schema:accessibilitySummary",
+        "provider_classification": "cdf:parentOrgClassification",
+        "last_modified": "dct:modified",
+    },
+    "service": {
+        "name": "schema:name",
+        "category": "schema:category",
+        "code": "schema:codeValue",
+        "audience": "schema:audience",
+        "area_served": "schema:areaServed",
+        "opening_hours": "schema:openingHours",
+    },
+    "provider": {
+        "name": "schema:name",
+        "homepage": "foaf:homepage",
+    },
+    "address": {
+        "street": "schema:streetAddress",
+        "postal_code": "schema:postalCode",
+        "locality": "schema:addressLocality",
+        "country": "schema:addressCountry",
+        "latitude": "schema:latitude",
+        "longitude": "schema:longitude",
+    },
+}
+
+# Entity type -> {relationship: (property, allowed target types)}.
+ENTITY_LINKS = {
+    "facility": {
+        "parent_organization": ("schema:parentOrganization", ("provider",)),
+        "address": ("schema:address", ("address",)),
+    },
+    "service": {
+        "provider": ("schema:provider", ("facility", "provider")),
+    },
+    "provider": {
+        "address": ("schema:address", ("address",)),
+    },
+    "address": {},
+}
+
+# Linked entities are expanded this many levels below the requested one
+# (service -> facility -> address/provider).
+MAX_CARD_DEPTH = 2
+
+MAX_LINKED_SERVICES = 50
+
+MAX_PAGE_SIZE = 25
+
+# The SPARQL prefilter of search_directory needs one term of at least this length, so a
+# search never scans the whole directory for a one- or two-letter substring.
+MIN_DIRECTORY_TERM_LENGTH = 3
+
+# search_directory counts these fields as missing across all matches.
+DIRECTORY_MISSING_FIELDS = ("telephone", "email", "opening_hours", "accessibility")
+
+PHONE_STATUSES = ("missing", "scientific_notation", "no_leading_zero", "as_recorded")
+
+
+def present(value: str | None) -> str | None:
+    """Keep non-blank values unchanged; whitespace-only values count as not recorded."""
+
+    return value if value is not None and value.strip() else None
+
+
+def telephone_quality(value: str | None) -> dict:
+    """
+    Classify a stored telephone value by syntax only. Nothing is repaired or verified:
+    a number that looks fine may still be wrong, and none is dialled.
+    """
+
+    first = (split_values(value) or [None])[0]
+
+    if first is None:
+        return {"status": "missing", "verified": False}
+
+    digits = first.strip()
+
+    if re.fullmatch(r"[+-]?\d+(?:\.\d+)?[eE][+-]?\d+", digits):
+        return {
+            "status": "scientific_notation",
+            "verified": False,
+            "note": "Stored as a number in scientific notation; do not reconstruct it.",
+        }
+
+    if digits.isdigit() and not digits.startswith("0"):
+        return {
+            "status": "no_leading_zero",
+            "verified": False,
+            "note": "Digits only and no leading 0: the area code may be incomplete. "
+            "Copy it as stored; never add a 0 or a country code.",
+        }
+
+    return {"status": "as_recorded", "verified": False}
+
+
+def url_quality(value: str | None) -> dict:
+    """Classify a stored URL by syntax only. An absolute http(s) URL is not checked live."""
+
+    first = (split_values(value) or [None])[0]
+
+    if first is None:
+        return {"status": "missing", "verified": False}
+
+    if any(character.isspace() for character in first):
+        return {"status": "malformed", "verified": False}
+
+    try:
+        parsed = urllib.parse.urlsplit(first)
+    except ValueError:
+        return {"status": "malformed", "verified": False}
+
+    if not parsed.scheme:
+        status = "relative_unresolved" if first.startswith(("/", "#", "?")) else "missing_scheme"
+    elif parsed.scheme not in ("http", "https"):
+        status = "unsupported_scheme"
+    elif not parsed.hostname:
+        status = "malformed"
+    else:
+        status = "absolute_http_unverified"
+
+    return {"status": status, "verified": False}
+
+
+def valid_entity_iri(iri: str) -> bool:
+    """True for an IRI under cdf: that is safe to put into IRI("...") in a query."""
+
+    return iri.startswith(FACILITY_IRI_PREFIX) and not re.search(r"[\s<>\"{}|\\^`]", iri)
+
+
+def clamp_page(limit, offset, default_limit: int) -> tuple[int, int]:
+    """Page size within 1..MAX_PAGE_SIZE and a non-negative offset."""
+
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = default_limit
+
+    try:
+        offset = int(offset)
+    except (TypeError, ValueError):
+        offset = 0
+
+    return min(max(limit, 1), MAX_PAGE_SIZE), max(offset, 0)
+
+
+def page_info(total: int, limit: int, offset: int, returned: int) -> dict:
+    """Paging fields shared by the search tools."""
+
+    end = offset + returned
+
+    return {
+        "total": total,
+        "returned": returned,
+        "limit": limit,
+        "offset": offset,
+        "next_offset": end if end < total else None,
+        "truncated": returned < total,
+    }
 
 
 def escape_literal(value: str) -> str:
@@ -830,4 +1018,339 @@ class SparqlClient:
             "offers": offers,
             "provider": row["provider_name"],
             "provider_type": row["provider_type"],
+        }
+
+    # ---- get_entity_card ------------------------------------------------------------
+
+    def entity_properties(self, iri: str) -> tuple[list[str], dict[str, list[str]], set[str]]:
+        """
+        (entity types, {property IRI: values in query order}, IRIs among the values) of one
+        entity. Types is empty when the IRI is not in the directory.
+        """
+
+        types: list[str] = []
+        values: dict[str, list[str]] = {}
+        links: set[str] = set()
+
+        for row in self.select("list_entity_properties_by_iri", iri=iri):
+            if row["type"] not in types:
+                types.append(row["type"])
+
+            if row["property"] is None or row["value"] is None:
+                continue
+
+            bucket = values.setdefault(row["property"], [])
+            if row["value"] not in bucket:
+                bucket.append(row["value"])
+
+            if row["value_is_iri"] == "true":
+                links.add(row["value"])
+
+        return types, values, links
+
+    def get_entity_card(self, iri: str) -> dict:
+        """
+        Every recorded field of one facility, service, provider or address, with missing
+        fields listed, syntax-only quality notes and typed links to related entities.
+        """
+
+        iri = iri.strip() if isinstance(iri, str) else ""
+
+        if not valid_entity_iri(iri):
+            return {
+                "status": "invalid_iri",
+                "id": iri,
+                "error": f"Expected a full directory IRI starting with {FACILITY_IRI_PREFIX}.",
+            }
+
+        return self._entity_card(iri, depth=0, seen=frozenset())
+
+    def _entity_card(self, iri: str, depth: int, seen: frozenset) -> dict:
+        types, values, links = self.entity_properties(iri)
+
+        if not types:
+            return {"status": "not_found", "id": iri}
+
+        kinds = sorted(
+            {ENTITY_TYPES[prefixed] for prefixed in ENTITY_TYPES if expand(prefixed) in types}
+        )
+
+        if len(kinds) != 1:
+            return {
+                "status": "unsupported_type" if not kinds else "ambiguous_type",
+                "id": iri,
+                "rdf_types": types,
+            }
+
+        kind = kinds[0]
+        seen = seen | {iri}
+
+        fields = {
+            name: present("; ".join(values.get(expand(prop), []))) for name, prop in ENTITY_FIELDS[kind].items()
+        }
+
+        quality = {}
+        if "telephone" in fields:
+            quality["telephone"] = telephone_quality(fields["telephone"])
+        for name in ("homepage", "source_page"):
+            if name in fields:
+                quality[name] = url_quality(fields[name])
+
+        relationships = {}
+        for name, (prop, expected) in ENTITY_LINKS[kind].items():
+            targets = [value for value in values.get(expand(prop), []) if value in links]
+            relationships[name] = self._relationship(prop, targets, expected, depth, seen)
+
+        card = {
+            "status": "ok",
+            "entity_type": kind,
+            "id": iri,
+            "fields": fields,
+            "field_properties": ENTITY_FIELDS[kind],
+            "missing_fields": [name for name, value in fields.items() if value is None],
+            "quality": quality,
+            "relationships": relationships,
+            "verification": "source_record_only",
+        }
+
+        if kind in ("facility", "provider"):
+            card["contact_scope"] = f"{kind}_record"
+
+        if depth == 0 and kind in ("facility", "provider"):
+            services = self.select("list_linked_services_by_iri", iri=iri)
+            card["linked_services_total"] = len(services)
+            card["linked_services"] = [
+                {"id": row["service"], "name": row["name"], "category": row["category"]}
+                for row in services[:MAX_LINKED_SERVICES]
+            ]
+
+        return card
+
+    def _relationship(self, prop: str, targets: list[str], expected: tuple, depth: int, seen: frozenset) -> dict:
+        """One typed link of a card: missing, dangling, type_mismatch, cycle, resolved or multiple."""
+
+        def one(target: str) -> dict:
+            relation = {"status": "resolved", "target_id": target, "target_type": None, "entity": None}
+
+            if target in seen:
+                relation["status"] = "cycle"
+                return relation
+
+            if depth >= MAX_CARD_DEPTH or not valid_entity_iri(target):
+                relation["status"] = "not_expanded"
+                return relation
+
+            card = self._entity_card(target, depth + 1, seen)
+
+            if card["status"] == "not_found":
+                relation["status"] = "dangling"
+            elif card["status"] != "ok":
+                relation["status"] = card["status"]
+            elif card["entity_type"] not in expected:
+                relation["status"] = "type_mismatch"
+                relation["target_type"] = card["entity_type"]
+            else:
+                relation["target_type"] = card["entity_type"]
+                relation["entity"] = card
+
+            return relation
+
+        if not targets:
+            return {"status": "missing", "property": prop, "target_id": None}
+
+        if len(targets) == 1:
+            return {"property": prop, **one(targets[0])}
+
+        return {"status": "multiple", "property": prop, "targets": [one(target) for target in targets]}
+
+    # ---- search_service_candidates ----------------------------------------------------
+
+    def search_service_candidates(self, query: str, limit: int = 5, offset: int = 0) -> dict:
+        """
+        Services whose name, category or audience contains query, each with the facility or
+        provider it links to and that entity's locality. Paged; totals cover all matches.
+        """
+
+        limit, offset = clamp_page(limit, offset, default_limit=5)
+        needle = casefold_de(query or "")
+        found = self.select("list_service_candidates_by_query", query=needle)
+
+        provider_types = {expand(prefixed): kind for prefixed, kind in ENTITY_TYPES.items()}
+        candidates = []
+
+        for row in found[offset:offset + limit]:
+            provider_type = provider_types.get(row["provider_type"])
+
+            if row["provider"] is None:
+                provider_status = "missing"
+            elif provider_type is None:
+                provider_status = "dangling"
+            else:
+                provider_status = "resolved"
+
+            if provider_status != "resolved":
+                location = {"status": "unknown", "postal_code": None, "locality": None, "scope": None}
+            else:
+                known = row["postal_code"] is not None or row["city"] is not None
+                location = {
+                    "status": "known" if known else "missing",
+                    "postal_code": row["postal_code"],
+                    "locality": row["city"],
+                    "scope": "facility_address" if provider_type == "facility" else "provider_organization_address",
+                }
+
+            matched_fields = [
+                field
+                for field in ("name", "category", "audience")
+                if needle in casefold_de(row[field] or "")
+            ]
+
+            candidates.append(
+                {
+                    "service_id": row["service"],
+                    "name": row["name"] or row["category"],
+                    "name_is_fallback": row["name"] is None,
+                    "category": row["category"],
+                    "audience": row["audience"],
+                    "provider": {
+                        "status": provider_status,
+                        "id": row["provider"],
+                        "type": provider_type,
+                        "name": row["provider_name"],
+                        "links_to_several": int(row["provider_count"] or 0) > 1,
+                    },
+                    "location": location,
+                    "matched_fields": matched_fields,
+                }
+            )
+
+        return {
+            "status": "ok",
+            "query": query,
+            **page_info(len(found), limit, offset, len(candidates)),
+            "candidates": candidates,
+        }
+
+    # ---- search_directory ---------------------------------------------------------------
+
+    def search_directory(
+        self,
+        query: str,
+        provider: str | None = None,
+        has_telephone: bool | None = None,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> dict:
+        """
+        Facilities where every query term occurs in the facility's text, its address or a
+        linked service. Optional provider-name and telephone filters. Paged hits; total,
+        missing-field counts, provider counts and phone-format counts cover all matches.
+        """
+
+        limit, offset = clamp_page(limit, offset, default_limit=10)
+        terms = list(dict.fromkeys(casefold_de(term) for term in (query or "").split()))
+        prefilter = max(terms, key=len, default="")
+
+        if len(prefilter) < MIN_DIRECTORY_TERM_LENGTH:
+            return {
+                "status": "error",
+                "query": query,
+                "error": (
+                    f"Give at least one search term of {MIN_DIRECTORY_TERM_LENGTH} or more "
+                    "characters, for example 'Schuldner' or 'Sucht Kreuzberg'."
+                ),
+            }
+
+        provider_term = casefold_de(provider) if provider else None
+        matches = []
+
+        for row in self.select("list_directory_facilities_by_term", term=prefilter):
+            if provider_term is not None and provider_term not in casefold_de(row["provider_name"] or ""):
+                continue
+
+            if has_telephone is not None and (present(row["telephone"]) is not None) != bool(has_telephone):
+                continue
+
+            searchable = [
+                ("facility", field, row[field])
+                for field in (
+                    "name", "alternate_name", "description", "category", "service_description",
+                    "audience", "accessibility", "opening_hours",
+                )
+            ]
+            searchable += [
+                ("address", field, row[column])
+                for field, column in (("street", "street"), ("postal_code", "postal_code"), ("locality", "city"))
+            ]
+            for service in (row["services"] or "").split(" || "):
+                parts = (service.split(" | ") + ["", "", "", ""])[:4]
+                searchable += [
+                    ("service", field, value or None)
+                    for field, value in zip(("name", "category", "audience", "area_served"), parts)
+                ]
+
+            texts = [(source, field, casefold_de(value)) for source, field, value in searchable if value]
+
+            if not all(any(term in text for _, _, text in texts) for term in terms):
+                continue
+
+            matched_fields = []
+            for source, field, text in texts:
+                matched_terms = [term for term in terms if term in text]
+                entry = {"source": source, "field": field, "matched_terms": matched_terms}
+                if matched_terms and entry not in matched_fields:
+                    matched_fields.append(entry)
+
+            matches.append((row, matched_fields))
+
+        def parent(row: dict) -> dict:
+            if row["provider"] is None:
+                return {"status": "missing", "id": None, "name": None, "label": "no provider link"}
+            return {"status": "resolved", "id": row["provider"], "name": row["provider_name"],
+                    "label": row["provider_name"] or row["provider"]}
+
+        hits = [
+            {
+                "iri": row["facility"],
+                "name": row["name"],
+                "street": row["street"],
+                "postal_code": row["postal_code"],
+                "locality": row["city"],
+                "telephone": row["telephone"],
+                "has_email": present(row["email"]) is not None,
+                "parent_provider": parent(row),
+                "matched_fields": matched_fields,
+            }
+            for row, matched_fields in matches[offset:offset + limit]
+        ]
+
+        by_provider: dict = {}
+        for row, _ in matches:
+            entry = parent(row)
+            key = entry["id"]
+            by_provider.setdefault(key, {**entry, "count": 0})["count"] += 1
+
+        phone_counts = {status: 0 for status in PHONE_STATUSES}
+        for row, _ in matches:
+            phone_counts[telephone_quality(row["telephone"])["status"]] += 1
+
+        return {
+            "status": "ok",
+            "query": query,
+            "terms": terms,
+            "provider": provider,
+            "has_telephone": has_telephone,
+            "record_unit": "facility_records",
+            **page_info(len(matches), limit, offset, len(hits)),
+            "hits": hits,
+            "summary_scope": "all_matching_facility_records",
+            "missing_counts": {
+                field: sum(present(row[column]) is None for row, _ in matches)
+                for field, column in zip(
+                    DIRECTORY_MISSING_FIELDS, ("telephone", "email", "opening_hours", "accessibility")
+                )
+            },
+            "by_provider": sorted(by_provider.values(), key=lambda entry: -entry["count"]),
+            "phone_format_counts": phone_counts,
+            "phone_format_verification": "unverified_syntax_only",
         }

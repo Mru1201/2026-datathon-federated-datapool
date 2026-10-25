@@ -31,6 +31,9 @@ SMOKE_ARGS = {
     "records_to_fix_first": {"city": "Berlin", "n": 3},
     "find_nearby": {"location": "13353", "radius_km": 1, "query": "Sucht, Alkohol"},
     "get_awo_details": {"iri": "https://civic-data.de/federated-directory#org-229a4e0b1081"},
+    "get_entity_card": {"iri": "https://civic-data.de/federated-directory#org-34e986356c61"},
+    "search_service_candidates": {"query": "Schuldner", "limit": 3},
+    "search_directory": {"query": "Schuldner", "has_telephone": True},
 }
 JSON_TOOLS = [t for t in SMOKE_ARGS if t != "count_facilities"]
 

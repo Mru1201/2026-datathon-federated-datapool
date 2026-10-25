@@ -211,6 +211,15 @@ MCP_CASES = {
     "get_awo_details": (
         {"iri": KNOWN_FACILITY_IRI}, "get_awo_details", (KNOWN_FACILITY_IRI,),
     ),
+    "get_entity_card": (
+        {"iri": KNOWN_FACILITY_IRI}, "get_entity_card", (KNOWN_FACILITY_IRI,),
+    ),
+    "search_service_candidates": (
+        {"query": "Schuldner", "limit": 5}, "search_service_candidates", ("Schuldner", 5),
+    ),
+    "search_directory": (
+        {"query": "Schuldner Kreuzberg"}, "search_directory", ("Schuldner Kreuzberg",),
+    ),
 }
 
 
@@ -302,6 +311,54 @@ def test_get_awo_details_agrees_with_find_nearby(client):
 
 def test_get_awo_details_unknown_iri(client):
     assert client.get_awo_details(KNOWN_FACILITY_IRI + "-does-not-exist") is None
+
+
+# ---- get_entity_card / search_service_candidates / search_directory ---------------
+
+def test_entity_card_agrees_with_get_awo_details(client):
+    card = client.get_entity_card(KNOWN_FACILITY_IRI)
+    details = client.get_awo_details(KNOWN_FACILITY_IRI)
+    assert card["status"] == "ok" and card["entity_type"] == "facility"
+    assert card["fields"]["name"] == details["name"]
+    assert card["fields"]["opening_hours"] == details["opening_hours"]
+    street = card["relationships"]["address"]["entity"]["fields"]["street"]
+    assert street and street in details["address"], f"card street {street!r} not in {details['address']!r}"
+
+
+def test_service_candidates_total_equals_search_services(client):
+    candidates = client.search_service_candidates("Schuldner", limit=25)
+    services = client.search_services("Schuldner")
+    assert candidates["total"] == len(services) > 0, (
+        f"search_service_candidates total {candidates['total']} != search_services {len(services)}"
+    )
+    assert {c["service_id"] for c in candidates["candidates"]} <= {s["iri"] for s in services}
+
+
+def test_service_candidates_follow_links_to_existing_offices(client):
+    page = client.search_service_candidates("Suchtberatung", limit=10)["candidates"]
+    resolved = [c for c in page if c["provider"]["status"] == "resolved"]
+    assert resolved, "no service in the first page links to a facility or provider"
+    card = client.get_entity_card(resolved[0]["provider"]["id"])
+    assert card["status"] == "ok" and card["entity_type"] == resolved[0]["provider"]["type"]
+
+
+def test_directory_telephone_filter_partitions_the_matches(client):
+    everything = client.search_directory("Schuldner Berlin")
+    with_phone = client.search_directory("Schuldner Berlin", has_telephone=True)
+    without = client.search_directory("Schuldner Berlin", has_telephone=False)
+    assert everything["total"] > 0
+    assert with_phone["total"] + without["total"] == everything["total"]
+    assert everything["missing_counts"]["telephone"] == without["total"]
+    assert sum(p["count"] for p in everything["by_provider"]) == everything["total"]
+
+
+def test_directory_more_terms_only_narrow(client):
+    broad = client.search_directory("Schuldner")
+    narrow = client.search_directory("Schuldner Kreuzberg")
+    assert 0 < narrow["total"] <= broad["total"]
+    for hit in narrow["hits"]:
+        terms = {t for m in hit["matched_fields"] for t in m["matched_terms"]}
+        assert terms == {"schuldner", "kreuzberg"}, f"{hit['name']} matched only {terms}"
 
 
 def pretty_details(details):
