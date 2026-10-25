@@ -4,6 +4,8 @@ Every query lives in its own file in sparql_queries/; load_query() fills its {{p
 and SparqlClient runs it and shapes the rows into the result of one MCP tool. See QUERIES.md.
 """
 
+import csv
+import functools
 import json
 import math
 import os
@@ -16,6 +18,19 @@ from pathlib import Path
 DEFAULT_ENDPOINT = "https://sosuse.correlaid.org/directory/sparql"
 
 QUERY_DIR = Path(__file__).resolve().parent.parent / "sparql_queries"
+
+# Inhabitants per postal code. The file spreads a municipality's population evenly over its
+# postal codes (all 194 Berlin codes have 18996), so per-code figures are estimates.
+INHABITANTS_FILE = Path(__file__).resolve().parent.parent / "data" / "einwohner_plz_de.csv"
+
+INHABITANTS_NOTE = (
+    "Inhabitants are estimates: the census file spreads each municipality's population "
+    "evenly over its postal codes. Compare municipalities rather than single codes of one city."
+)
+
+POSTAL_CODE_ORDERS = ("most_facilities", "highest_per_10k", "lowest_per_10k")
+
+MAX_POSTAL_CODE_RESULTS = 100
 
 PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 
@@ -465,6 +480,23 @@ def matches_terms(texts: list[str | None], query: str | None) -> bool:
     return any(term in text for term in terms)
 
 
+@functools.cache
+def load_inhabitants() -> dict[str, int]:
+    """Read data/einwohner_plz_de.csv into {postal code: inhabitants}."""
+
+    with open(INHABITANTS_FILE, newline="", encoding="utf-8") as f:
+        return {row["plz"]: int(row["population"]) for row in csv.DictReader(f)}
+
+
+def per_10k(facilities: int, inhabitants: int | None) -> float | None:
+    """Facilities per 10,000 inhabitants; None when the population is unknown or zero."""
+
+    if not inhabitants:
+        return None
+
+    return round(facilities / inhabitants * 10_000, 2)
+
+
 def load_query(query_name: str, /, **params: str) -> str:
     """
     Load sparql_queries/<query_name>.rq and fill its {{placeholders}}.
@@ -776,6 +808,75 @@ class SparqlClient:
             }
             for row in self.select("list_facilities_by_postal_code", postal_code=postal_code)
         ]
+
+    def count_facilities_per_postal_code(
+        self,
+        postal_code_prefix: str = "",
+        order: str = "most_facilities",
+        limit: int = 20,
+    ) -> dict:
+        """
+        Facilities per postal code, joined with inhabitants (data/einwohner_plz_de.csv).
+
+        Covers every postal code of the census file plus every code that has facilities,
+        so codes without any facility show up with 0.
+        """
+
+        order = order.strip().casefold()
+        if order not in POSTAL_CODE_ORDERS:
+            return {
+                "error": f"Unknown order '{order}'.",
+                "valid_orders": list(POSTAL_CODE_ORDERS),
+            }
+
+        limit = max(1, min(int(limit), MAX_POSTAL_CODE_RESULTS))
+        prefix = postal_code_prefix.strip()
+
+        counts = self.value_counts("count_facilities_per_postal_code")
+        inhabitants = load_inhabitants()
+
+        # Values such as "(auf Anfrage)" or "8371" are not postal codes; only their total is reported.
+        malformed = {code: count for code, count in counts.items() if not POSTAL_CODE.match(code)}
+        counts = {code: count for code, count in counts.items() if code not in malformed}
+
+        found = [
+            {
+                "postal_code": code,
+                "facilities": counts.get(code, 0),
+                "inhabitants": inhabitants.get(code),
+                "facilities_per_10k_inhabitants": per_10k(counts.get(code, 0), inhabitants.get(code)),
+            }
+            for code in sorted(set(counts) | set(inhabitants))
+            if code.startswith(prefix)
+        ]
+
+        total_facilities = sum(row["facilities"] for row in found)
+        total_inhabitants = sum(row["inhabitants"] or 0 for row in found)
+
+        if order == "most_facilities":
+            ranked = sorted(found, key=lambda row: -row["facilities"])
+        else:
+            # Codes without a known population have no density and are left out.
+            ranked = [row for row in found if row["facilities_per_10k_inhabitants"] is not None]
+            if order == "highest_per_10k":
+                ranked.sort(key=lambda row: -row["facilities_per_10k_inhabitants"])
+            else:
+                # Fewest facilities per head first; among equals, the most inhabitants first.
+                ranked.sort(key=lambda row: (row["facilities_per_10k_inhabitants"], -row["inhabitants"]))
+
+        return {
+            "postal_code_prefix": prefix,
+            "order": order,
+            "postal_codes": len(found),
+            "postal_codes_without_facilities": sum(row["facilities"] == 0 for row in found),
+            "facilities": total_facilities,
+            "inhabitants": total_inhabitants,
+            "facilities_per_10k_inhabitants": per_10k(total_facilities, total_inhabitants),
+            "facilities_with_malformed_postal_code": sum(malformed.values()),
+            "showing": min(limit, len(ranked)),
+            "results": ranked[:limit],
+            "note": INHABITANTS_NOTE,
+        }
 
     def facility_repository(self, city: str):
         """Facilities of a city plus their addresses and providers, shaped for src/fix_first.py."""
