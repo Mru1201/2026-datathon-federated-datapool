@@ -102,6 +102,8 @@ same data (e.g. phone numbers lost their leading 0), and two facilities differ.
 | `test_duplicate_query_selects_every_column` (×4) | each `list_duplicate_*.rq` compares every non-IRI column |
 | `test_count_facilities_parity` (×4) | Berlin/berlin/BERLIN/Atlantis: SPARQL count == CSV count |
 | `test_search_facilities_parity` (×4) | same cities: identical result rows (all 8 fields) |
+| `tests/unit/test_fix_first.py` | records_to_fix_first logic (buckets, scoring, tiers, batches, urgent focus) on a small fake repository |
+| `tests/unit/test_fix_first_sparql.py` | the real `list_facility_quality_fields_by_city.rq` on `directory.ttl`: one row per facility, addresses in the city, ranking runs, unknown city is empty |
 | `test_get_facility_details_parity` (×7) | Drehscheibe, drehscheibe, Lübecker, (HLS6), .*, AWO, empty: identical details incl. nested address and provider |
 | `test_search_services_parity` (×7) | Suchtberatung, sucht, Senioren, Pflege, Beratung, no-match, empty: identical services |
 | `test_detect_duplicates_parity` | same groups as the pandas duplicate logic with the IRI column left out |

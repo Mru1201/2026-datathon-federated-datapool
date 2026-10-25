@@ -537,6 +537,70 @@ class SparqlClient:
             for row in self.select("list_facilities_by_postal_code", postal_code=postal_code)
         ]
 
+    def facility_repository(self, city: str):
+        """Facilities of a city plus their addresses and providers, shaped for src/fix_first.py."""
+
+        import pandas as pd
+
+        from src.fix_first import FixFirstRepository
+
+        columns = DATASETS["einrichtung"]["columns"]
+        # column -> query variable (the query joins multi-valued fields with "; ")
+        variables = {
+            "iri": "facility",
+            "schema:name": "name",
+            "schema:alternateName": "alternate_name",
+            "schema:telephone": "telephone",
+            "schema:email": "email",
+            "foaf:homepage": "homepage",
+            "schema:mainEntityOfPage": "main_page",
+            "schema:category": "category",
+            "schema:availableService": "service_description",
+            "schema:audience": "audience",
+            "schema:accessibilitySummary": "accessibility",
+            "schema:openingHours": "opening_hours",
+            "schema:parentOrganization": "provider",
+            "cdf:parentOrgClassification": "parent_classification",
+            "schema:address": "address",
+        }
+
+        facilities = self.select("list_facility_quality_fields_by_city", city=city.casefold())
+
+        address_by_iri = {
+            row["address"]: {
+                "schema:streetAddress": row["street"],
+                "schema:postalCode": row["postal_code"],
+                "schema:addressLocality": row["city"],
+            }
+            for row in facilities
+            if row["address"]
+        }
+        provider_by_iri = {
+            provider["iri"]: {
+                "iri": provider["iri"],
+                "schema:name": provider["name"],
+                "foaf:homepage": provider["homepage"],
+            }
+            for provider in self.list_providers()
+        }
+        einrichtung = pd.DataFrame(
+            [{column: row[variables[column]] for column in columns} for row in facilities],
+            columns=columns,
+            dtype=object,
+        )
+
+        return FixFirstRepository(einrichtung, address_by_iri, provider_by_iri)
+
+    def records_to_fix_first(self, city: str, **options) -> dict:
+        """Rank the facilities of a city by how much fixing their record matters."""
+
+        from src.fix_first import records_to_fix_first
+
+        result = records_to_fix_first(self.facility_repository(city), **options)
+        result["summary"] = {"city": city, **result["summary"]}
+
+        return result
+
     def compare_facilities(self, facility_1: str, facility_2: str) -> list[dict]:
         """Compare two facilities by name."""
 
