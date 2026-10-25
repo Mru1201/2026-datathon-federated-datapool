@@ -23,7 +23,7 @@ Germany* (SoSuSe), a public SPARQL endpoint run by CorrelAid:
 ```text
 AI assistant (Claude Desktop, Claude Code, ...)
    │  MCP over stdio
-server.py               13 MCP tools; each calls one SparqlClient method and returns JSON
+server.py               17 MCP tools; each calls one SparqlClient method and returns JSON
    │
 src/sparql_client.py    loads a query file, fills in the parameters, sends it,
    │                    turns the result rows into the tool's answer
@@ -47,6 +47,7 @@ Tools never build query strings themselves. User input only reaches a query thro
 | `data/directory.ttl` | RDF snapshot of the directory. The offline tests run the real queries on it, so CI needs no network. |
 | `data/*Schema.csv` | The original AWO CSV export. Used only by the tests; its headers define the `DATASETS` columns. |
 | `tests/` | Five test layers (unit, MCP protocol, live API, LLM connection, LLM tool-calling evals) and a live test dashboard. See [TEST.md](TEST.md). |
+| `benchmarking/` | LLM benchmark against the real server: multilingual, professional and smoke case suites, an agent loop over MCP, deterministic evaluators, optional rubric judge, tool-profile comparisons and leaderboards. See [benchmarking/README.md](benchmarking/README.md). |
 | `.github/workflows/` | CI: offline tests on every push, live API tests and LLM evals on manual trigger. |
 | `doc/` | Datathon presentations. |
 
@@ -68,6 +69,9 @@ Tools never build query strings themselves. User input only reaches a query thro
 | `records_to_fix_first(city, ...)` | Facility records of a city ranked by how much fixing them matters, with reasons, provider batches and a projected coverage gain | "Which Berlin records should we fix first?" |
 | `find_nearby(location, radius_km, query, accessible_only, limit)` | Facilities within a radius of a postal code or `"latitude,longitude"`, nearest first, with distance, contacts and opening hours. `query` takes comma-separated terms and matches any of them | "Addiction counselling near 13353?" |
 | `get_awo_details(iri)` | Address, map link, contacts, opening hours, accessibility, offers, provider and source link for one facility | "What are the opening hours of this facility?" |
+| `get_entity_card(iri)` | Every recorded field of a facility, service, provider or address, the missing fields, syntax-only quality notes (e.g. a phone without leading 0) and typed links (service → facility → address/provider) | "What exactly does the directory record for this entry?" |
+| `search_service_candidates(query, limit, offset)` | Services matching name/category/audience, each with the facility or provider that runs it and its postal code and locality; paged | "Which debt counselling services are there, and which office runs each?" |
+| `search_directory(query, provider, has_telephone, limit, offset)` | Facilities where every term matches their own text, address or a linked service; provider and phone filters; paged hits, with totals and missing-field counts over all matches | "How many debt counselling facilities in Kreuzberg have a phone number?" |
 
 Matching is case-insensitive (`GIESSEN` finds `Gießen`). City matches are **exact**, so
 `Berlin` does not include `Berlin-Mitte`. Name and service searches are substring matches.

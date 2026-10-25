@@ -12,6 +12,12 @@ case), so a red test tells you where to look without a debugger.
 | 4. Connection smoke | `tests/llm/` | Open WebUI + API key | manual (self-hosted runner) |
 | 5. Tool-calling evals | `tests/evals/` | Open WebUI + API key | manual (self-hosted runner) |
 
+Beyond the pytest layers, `benchmarking/` runs larger case suites (multilingual,
+professional handoff) against any LLM with deeper scoring and reports. It reads the same
+`tests/evals/cases.json` as its `smoke` suite. Its own code is tested offline in layers 1
+and 2 (`test_benchmark_harness.py`, `test_benchmark_suites.py`). See
+[benchmarking/README.md](benchmarking/README.md).
+
 ## Running
 
 ```bash
@@ -172,6 +178,70 @@ rejected in Python.
 | `test_get_awo_details_rejects_malformed_iri_without_query` (×4) | foreign, quote-breaking, spaced or empty IRIs → None, no query sent |
 | `test_find_nearby_matches_independent_distance_check` (×2) | on `directory.ttl`, the result set equals facilities within the radius computed directly from the graph's triples |
 
+### `test_entity_search.py` – `get_entity_card`, `search_service_candidates`, `search_directory`
+
+Offline. Edge cases run on a small Turtle snippet (a debt counselling facility with phone,
+address and provider, a facility with a whitespace-only phone, one with two phones, one
+with a dangling address and a mistyped provider link, services linked to facilities, to a
+provider and to nothing). The datathon examples run on `data/directory.ttl`.
+
+| Test | Checks |
+|---|---|
+| `test_telephone_quality` (×8) | missing, scientific notation, digits without leading 0, as recorded; never "verified" |
+| `test_url_quality` (×6) | missing, no scheme, relative, other scheme, malformed, absolute http(s) |
+| `test_valid_entity_iri` (×5) | only `cdf:` IRIs without spaces or IRI-breaking characters are accepted |
+| `test_clamp_page_and_page_info` | page size kept within 1–25, negative offset → 0; `next_offset`/`truncated` |
+| `test_card_facility_fields_missing_and_links` | fields as stored, missing fields listed, address and provider resolved, linked services |
+| `test_card_whitespace_value_counts_as_missing` | a whitespace-only phone is missing; no provider link → `missing` |
+| `test_card_multi_valued_telephone_is_joined` | two phones are joined with "; " |
+| `test_card_dangling_and_type_mismatch_links` | a link to a missing entity is `dangling`, to an address where a provider is expected `type_mismatch` |
+| `test_card_service_follows_provider_to_facility_and_address` | service → facility → address is expanded |
+| `test_card_service_can_link_to_a_provider_organisation` | a service whose provider is a Träger resolves to type `provider` |
+| `test_card_provider_lists_its_services` | provider cards list linked services; homepage without scheme is flagged |
+| `test_card_unknown_iri` | unknown IRI → `not_found` |
+| `test_card_rejects_malformed_iri_without_query` (×4) | foreign, quote-breaking, spaced or empty IRIs → `invalid_iri`, no query sent |
+| `test_service_candidates_link_office_and_locality` | each service comes with its facility and locality; category used as name fallback; unlinked service → `missing`/`unknown` |
+| `test_service_candidates_organisation_scope` | a service run by a provider organisation reports `provider_organization_address` |
+| `test_service_candidates_paging` | two pages cover all matches without overlap; `next_offset` ends with `None` |
+| `test_service_candidates_match_audience_and_ignore_facility_names` | audience is searched, facility names are not |
+| `test_directory_matches_facility_name_service_and_address` | a facility is found through its own name or a linked service; `matched_fields` says where |
+| `test_directory_every_term_must_match` | all terms must match (name + locality, service + postal code) |
+| `test_directory_filters_and_summaries_cover_all_matches` | totals, missing counts and provider counts cover all matches, not the page; telephone and provider filters |
+| `test_directory_eszett_matches_ss` | "ritterstrasse" finds "Ritterstraße" |
+| `test_directory_needs_a_long_enough_term_and_sends_no_query` (×3) | no term of 3+ characters → `error`, no query sent |
+| `test_directory_ttl_schuldner_matches_independent_count` | on `directory.ttl`: "Schuldner" finds the 12 facilities counted directly from the graph; only Ritterstraße 3 has a phone |
+| `test_directory_ttl_service_candidates_for_schuldner` | 6 "Schuldner" services, all linked to an office |
+| `test_directory_ttl_entity_card_has_hours_and_accessibility` | Frauenladen card has its drop-in hours and accessibility sentence |
+
+### `test_benchmark_harness.py` – benchmark harness (`benchmarking/`)
+
+Offline, no LLM: scripted models, a fake tool runner, and a stand-in `litellm` module.
+
+| Test | Checks |
+|---|---|
+| `test_match_value` (×13) | expected-argument matching: substring, bool, numbers within 10 %, `any_of`, lists |
+| `test_args_mismatch_names_the_argument` | mismatch messages name the argument |
+| `test_args_for_uses_per_tool_expectations` | `expect_args_by_tool` beats `expect_args`; other tools have no argument check |
+| `test_case_rejects_unknown_fields_and_empty_tool_list` | typos in case files and `expect_tool: []` are errors |
+| `test_every_suite_loads` (×4) | smoke, citizen, multilingual, professional load; aspirational cases name the missing tools |
+| `test_validate_cases_and_profiles` | cases with no existing tool are reported; tool profiles include/exclude correctly |
+| `test_loop_feeds_tool_results_back_and_grades_the_final_answer` | the tool result is sent back to the model before the graded final answer |
+| `test_loop_reports_unknown_tool_to_the_model_and_continues` | an unknown tool becomes an error result, the run continues |
+| `test_loop_stops_after_max_steps` | no final answer after `max_steps` → loop error |
+| `test_oracle_calls_the_expected_tool_with_full_iri_and_answers` | the oracle uses the full IRI from the prompt and reports empty results as "nothing found" |
+| `test_oracle_fills_required_arguments` | `any_of` expectations become concrete arguments |
+| `test_tool_selection_wrong_tool_and_wrong_args` | stages "wrong tool chosen" / "wrong tool arguments"; missing required argument |
+| `test_tool_selection_no_call` | no tool call fails, unless the case does not require one |
+| `test_contact_grounding_flags_invented_and_tolerates_reformatted` | invented phone/email fail; an added leading 0 is a warning; emergency numbers and postal codes pass |
+| `test_safety_abstention_requires_saying_nothing_was_found` | zero-result cases need an explicit "nothing found" and no invented IRIs |
+| `test_completion_and_answer_content` | final answer present, `answer_contains`, tool errors counted |
+| `test_wilson_interval_known_values` | 8/10 → [0.490, 0.943] |
+| `test_latency_percentiles_match_linear_interpolation` | p50/p90 like numpy's default |
+| `test_summary_and_paired_changes` | per-profile summaries and a baseline → all "gain" |
+| `test_parse_arguments` | tool arguments: JSON object, dict, invalid JSON, non-object |
+| `test_litellm_adapter_parses_tool_calls_and_uses_api_key` | tool calls, tokens and cost parsed; `api_key_env` and `api_base` passed to LiteLLM |
+| `test_litellm_adapter_reports_missing_api_key` | a missing key is a clear failure, not a crash |
+
 ### `test_repository.py` – `DataRepository` (reference implementation)
 | Test | Checks |
 |---|---|
@@ -211,11 +281,11 @@ This layer checks the MCP plumbing. Whether the results are correct is checked i
 
 | Test | Checks |
 |---|---|
-| `test_baseline_tools_are_listed` | none of the 13 tools in `SMOKE_ARGS` disappeared |
+| `test_baseline_tools_are_listed` | none of the 17 tools in `SMOKE_ARGS` disappeared |
 | `test_every_listed_tool_has_smoke_args` | **fails when someone adds a tool without registering it in `SMOKE_ARGS`** – the prompt to add tests |
-| `test_tool_metadata_is_llm_friendly` (×13) | docstring ≥ 20 chars, valid object schema, required ⊆ properties |
-| `test_tool_call_succeeds` (×13) | call with valid args returns no MCP error and non-empty output |
-| `test_tool_returns_valid_json_without_nan` (×12) | output parses as JSON; no bare `NaN` (`count_facilities` returns a plain number and is excluded) |
+| `test_tool_metadata_is_llm_friendly` (×17) | docstring ≥ 20 chars, valid object schema, required ⊆ properties |
+| `test_tool_call_succeeds` (×17) | call with valid args returns no MCP error and non-empty output |
+| `test_tool_returns_valid_json_without_nan` (×16) | output parses as JSON; no bare `NaN` (`count_facilities` returns a plain number and is excluded) |
 | `test_umlauts_are_not_escaped` | `ensure_ascii=False` works end-to-end |
 | `test_missing_required_argument_is_an_error` | error names the missing argument |
 | `test_wrong_argument_type_is_an_error` | wrong type rejected |
@@ -223,6 +293,9 @@ This layer checks the MCP plumbing. Whether the results are correct is checked i
 | `test_server_starts_over_stdio` | `python server.py` starts and completes the MCP handshake |
 | `test_get_awo_details_unknown_iri_is_a_message_not_an_error` | unknown IRI → "No facility found" text, not an MCP error |
 | `test_find_nearby_unresolvable_location_reports_error` | a street name → JSON with `error` and no results |
+| `test_every_active_case_can_be_run_on_this_server` | (`test_benchmark_suites.py`) every active benchmark case expects at least one tool that `server.py` lists |
+| `test_aspirational_cases_really_need_missing_tools` | an aspirational case whose missing tool now exists fails, so it gets activated |
+| `test_oracle_benchmark_runs_end_to_end_offline` | oracle run in-process on `directory.ttl`: passes with all tools, `baseline` hides `get_entity_card`, paired report and CSVs are written |
 | `test_find_help_prompt_is_listed_and_renders` | `find_help` is listed with optional `situation`/`location`, renders with the inputs and tool names, has no unfilled placeholders, and says "not given yet" without inputs |
 
 ## Layer 3 – SPARQL API (`tests/api/test_sparql.py`)
@@ -261,13 +334,18 @@ in Python).
 | `test_check_completeness_consistent` | rows == dataset sizes; IRI never missing; cells and missing counts add up; percentages 0–100 |
 | `test_generate_statistics_consistent` | with + without address/provider == facility total; Berlin in `facilities_by_city` == `count_facilities`; per-provider and per-category sums are plausible |
 | `test_compare_facilities_equals_two_detail_lookups` | both sides == `get_facility_details` for each name, both non-empty |
-| `test_mcp_tool_returns_client_result` (×10) | every tool called over MCP returns exactly what `SparqlClient` returns (JSON round trip) |
+| `test_mcp_tool_returns_client_result` (×14) | every tool called over MCP returns exactly what `SparqlClient` returns (JSON round trip) |
 | `test_postal_code_origin_is_where_the_postal_code_is` | 10115 resolves to central Berlin |
 | `test_find_nearby_matches_independent_distance_check` (×2) | 10115 (1 km) and central Munich (1.5 km): result count == facilities within the radius from a plain coordinate query with distances in Python; results nearest first |
 | `test_find_nearby_query_only_narrows` | `query="Sucht"` finds some but not more than without a query |
 | `test_get_awo_details_known_facility` | org-229a4e0b1081 is vista WIGWAM Connect in Berlin, with a map link |
 | `test_get_awo_details_agrees_with_find_nearby` | details of the nearest result have the same name and address |
 | `test_get_awo_details_unknown_iri` | unknown IRI → None |
+| `test_entity_card_agrees_with_get_awo_details` | org-229a4e0b1081: same name, opening hours and street as `get_awo_details` |
+| `test_service_candidates_total_equals_search_services` | "Schuldner": same total as `search_services`, candidates are a subset of its services |
+| `test_service_candidates_follow_links_to_existing_offices` | the linked office of a Suchtberatung service opens as a card of the reported type |
+| `test_directory_telephone_filter_partitions_the_matches` | with + without phone == all; missing phone count == "without" total; provider counts add up |
+| `test_directory_more_terms_only_narrow` | "Schuldner Kreuzberg" ⊆ "Schuldner"; every hit matched both terms |
 
 ## Layer 4 – Connection smoke (`tests/llm/test_connection.py`)
 | Test | Checks |
@@ -295,7 +373,13 @@ Each failed run is labelled with the **stage** where it broke:
 
 Cases (`tests/evals/cases.json`): `count-berlin`, `search-facilities-berlin`,
 `facility-details`, `search-services-sucht`, `duplicates`, `completeness`, `statistics`, `compare`,
-`fix-first-berlin`, `nearby-postal-code`, `nearby-coordinates`, `awo-details-by-iri`.
+`fix-first-berlin`, `nearby-postal-code`, `nearby-coordinates`, `awo-details-by-iri`,
+`find-help-debt`, `find-help-addiction-english`, `entity-card-by-iri`,
+`service-candidates-with-office`, `directory-count-with-phone`.
+
+The same file is the `smoke` suite of the benchmark (`python -m benchmarking.run_benchmark
+--suites smoke`), which can also run it against cloud models, compare tool profiles and
+add the citizen, multilingual and professional suites.
 
 ### Testing a new feature
 1. Add valid arguments to `SMOKE_ARGS` in `tests/protocol/test_server.py`.

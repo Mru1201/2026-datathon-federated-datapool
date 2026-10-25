@@ -85,5 +85,24 @@
     "prompt": "I think my brother has an alcohol problem. Where can he get help?",
     "expect_tool": "find_social_help",
     "expect_args": {"need": "addiction"}
+  },
+  {
+    "id": "entity-card-by-iri",
+    "prompt": "Which opening hours and accessibility information does the directory record for https://civic-data.de/federated-directory#org-34e986356c61? List only what is recorded.",
+    "expect_tool": "get_entity_card",
+    "expect_args": {"iri": "org-34e986356c61"},
+    "answer_contains": ["11"]
+  },
+  {
+    "id": "service-candidates-with-office",
+    "prompt": "Find debt counselling services (Schuldnerberatung) and tell me which office runs each one and where it is.",
+    "expect_tool": "search_service_candidates",
+    "expect_args": {"query": "schuldner"}
+  },
+  {
+    "id": "directory-count-with-phone",
+    "prompt": "How many debt counselling (Schuldner) facility records in Berlin-Kreuzberg have a telephone number on record?",
+    "expect_tool": "search_directory",
+    "expect_args": {"query": "schuldner"}
   }
 ]
