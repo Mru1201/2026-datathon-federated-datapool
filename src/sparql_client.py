@@ -664,7 +664,6 @@ class SparqlClient:
             for name in [facility_1, facility_2]
         ]
 
-
     def resolve_location(self, location: str) -> dict | None:
         """
         Turn a location into search coordinates.
