@@ -171,77 +171,174 @@ def search_by_postal_code(postal_code: str) -> str:
 
 
 @mcp.tool()
-def records_to_fix_first(
-    city: str = "Berlin",
-    provider: str | None = None,
-    n: int = 10,
-    bucket: str | None = None,
-    group_by: str | None = None,
-    focus: str | None = None,
-    explain: bool = False,
+def find_nearby(
+    location: str,
+    radius_km: float = 2.0,
+    query: str | None = None,
+    accessible_only: bool = False,
+    limit: int = 10,
 ) -> str:
     """
-    Rank the facility records of one city by how much fixing them matters, for
-    data maintainers (not for people looking for help). Use this when asked
-    which records to fix first, what is wrong with the data, which records may
-    not belong in the directory, whom to contact about missing information, or
-    how the priority or ranking of records is calculated (then set explain to
-    true). All counts and percentages in the result cover only the requested
-    city, never the whole directory.
-
-    Each record is placed in a bucket: complete_key_field (informative but
-    missing phone, email, hours or address), repair (a value is broken, such as
-    a phone number that lost its leading zero), ask_provider (the provider can
-    fill the gap), enrich_from_source (almost empty but a source page exists),
-    scope_check (may not be a service, for example a church body),
-    junk_or_duplicate, needs_research (almost empty, no lead) and minor_gaps.
-    Each record has a priority tier (high, medium or low), and results are
-    ordered from most to least important. The numeric score is not shown by
-    default, because small score differences are not meaningful.
+    Find facilities near a location, nearest first.
 
     Args:
-        city: City to check, for example "Berlin" (default). Matches exactly.
-        provider: Part of a provider name, or "unassigned" for facilities with
-            no provider link.
-        n: How many records to return (default 10).
-        bucket: Only return one bucket, for example "scope_check".
-        group_by: Use "provider" to get batches for outreach (one request per
-            provider) instead of single records.
-        focus: Use "urgent" to only return services people may urgently depend
-            on (addiction help, homelessness, crisis, debt counselling).
-        explain: Set to true only when the user asks how priority is determined
-            or why one record ranks above another. It adds the numeric score
-            and a breakdown (missing field weight, bonuses and bucket
-            multiplier) to each record.
-
-    How to answer: use only facts from the tool result, and do not add outside
-    knowledge such as dates, seasons or locations, and do not claim something
-    about all records unless the summary says so. Lead with the conclusion in
-    one or two sentences, then answer only what was asked (about 120 words plus
-    any table). Use a table only when listing several records or providers,
-    with just the columns that matter (name, priority, what is missing, where
-    to look). When listing records, show every returned row in rank order and
-    keep the rank numbers, so any text can refer to them. Take counts from the summary (for example `shown` and
-    `urgent_in_matching_records`) instead of counting rows yourself. Explain
-    how priority is calculated, or go into detail, only when the user asks.
+        location: "latitude,longitude" (for example "52.5446,13.3592") or a
+            five-digit postal code (for example "13353"). For a landmark or
+            neighbourhood, pass its approximate coordinates.
+        radius_km: Search radius in kilometres (0.1 to 50). Defaults to 2.
+        query: Optional search terms matched against name, category, services,
+            offers, and audience. Separate several terms with commas to match
+            any of them (for example "Sucht, Alkohol" or "Wohnungsnot, obdach").
+        accessible_only: Only return facilities marked as wheelchair accessible.
+        limit: Maximum number of results (1 to 50). Defaults to 10.
 
     Returns:
-        JSON with a summary, a projected coverage gain (a projection, not a
-        measured improvement), and either ranked records with reasons, leads
-        and next steps, or provider batches.
+        JSON containing the resolved origin, the number of matches, and the
+        nearest facilities with distance, address, contacts, and opening hours.
     """
 
     return to_json(
-        sparql.records_to_fix_first(
-            city,
-            provider=provider,
-            n=n,
-            bucket=bucket,
-            group_by=group_by,
-            focus=focus,
-            explain=explain,
+        sparql.find_nearby(
+            location,
+            radius_km=radius_km,
+            query=query,
+            accessible_only=accessible_only,
+            limit=limit,
         )
     )
+
+
+@mcp.tool()
+def get_awo_details(iri: str) -> str:
+    """
+    Get the address, map link, contacts, and opening hours for one facility.
+
+    Args:
+        iri: Facility IRI, as returned by find_nearby, search_facilities,
+            or get_facility_details.
+
+    Returns:
+        JSON containing the facility's address, Google Maps link, contact
+        details, opening hours, accessibility, offers, provider, and a link
+        to its entry in the source directory (for example caritas.de or dhs.de).
+    """
+
+    result = sparql.get_awo_details(iri)
+
+    if result is None:
+        return f"No facility found with IRI '{iri}'."
+
+    return to_json(result)
+
+
+# ---- Prompts ------------------------------------------------------------------
+
+# Search terms that work well with find_nearby, by kind of need. The data is
+# in German, so German terms match best.
+SEARCH_TERM_HINTS = """
+- Addiction (alcohol, drugs, gambling, gaming, medication): "Sucht, Alkohol, Drogen,
+  Glücksspiel, Mediennutzung, Medikamenten"
+- Housing loss, eviction, homelessness: "Wohnungsnot, Wohnungslos, obdach, Notübernachtung"
+- Debt: "Schuldner"
+- Children, youth, families: "Jugend, Kinder, Familie, Eltern"
+- Older people and care: "Senior, Pflege"
+- Disability or mental health: "Behinder, psych, Eingliederung"
+- Migration and integration: "Migration"
+- Unemployment and training: "erwerbslos, arbeitslos, Ausbildung"
+- Outreach and drop-in (staff who come to you, or walk in without an appointment):
+  "Streetwork, aufsuchend, Kontakt- und Anlaufstelle"
+"""
+
+RELEVANCE_RUBRIC = """
+Rate how strongly you'd recommend each place as a step for this person, from 1 to 5.
+Start from first-step fit, then adjust:
+- First-step fit (most important):
+  3 = a good place to start for this need (e.g. a counselling centre for drinking),
+  2 = addresses the need but usually comes later or suits only some people
+      (e.g. supported living, a clinic for a specific group),
+  1 = only loosely related.
+- Distance: within 1 km +1, 1–3 km +0.5, further +0.
+- Reachability: phone or email listed +1, only a source link or address +0.5.
+- If the person needs step-free access and it isn't listed as accessible, -1.
+Round to the nearest whole number, then cap it: places with first-step fit 2 can
+get at most 3/5, and fit 1 at most 2/5. So 4–5/5 always means "a good place to
+start". Show it as ★ (e.g. ★★★★☆ 4/5).
+The rating reflects fit for their need based on the directory data, not the quality
+of the service; say so once.
+"""
+
+
+@mcp.prompt(title="Find help near me")
+def find_help(situation: str = "", location: str = "") -> str:
+    """
+    Explain the kinds of help available for someone's need, recommend 3–5
+    nearby places rated by relevance, and list who to contact first.
+
+    Args:
+        situation: What the person needs help with, in their own words.
+        location: Where they are: a postal code, or a landmark or neighbourhood.
+    """
+
+    return f"""You are helping someone find social services in Germany using the directory tools.
+Be warm and brief, and use plain language. Reply in the language the person writes in.
+Keep the whole answer short enough to read on a phone.
+
+What they need help with: {situation or "not given yet"}
+Where they are: {location or "not given yet"}
+
+Before answering:
+1. If they mention danger to themselves or others, give these numbers before
+   anything else: 112 (emergency), 110 (police), Telefonseelsorge
+   0800 111 0 111 or 0800 111 0 222 (free, 24/7).
+2. If the need or the location is missing, ask for it in one short question.
+   Don't ask for names or other personal details; they aren't needed to search.
+3. Turn their need into German search terms and call find_nearby with
+   comma-separated terms. Useful terms:
+{SEARCH_TERM_HINTS}
+   find_nearby takes a five-digit postal code or "latitude,longitude". For a street,
+   landmark or neighbourhood, pass its approximate coordinates; if you don't know
+   them, ask for the postal code.
+   If they need step-free access, set accessible_only.
+   If fewer than 3 results come back, widen radius_km (2 → 5) or broaden the terms.
+   If the need suggests they may not be able to come in (e.g. homelessness,
+   addiction), also search the outreach and drop-in terms.
+4. Call get_awo_details for the most promising places. Read their offers, topics,
+   names, and categories to work out who each place is for (e.g. women only,
+   pregnant women, people who use illegal drugs, young people).
+
+Then answer in this order:
+
+A. A one-line acknowledgement, then a safety note only if the need calls for one
+   (e.g. don't stop heavy daily drinking suddenly because withdrawal can be
+   dangerous; act quickly on an eviction notice because deadlines are short).
+
+B. Kinds of help: 2–4 short bullets on the types of service that exist for this
+   need (e.g. counselling centre, clinic, supported living, drop-in, outreach),
+   what each is for, and which is usually the best first step.
+
+C. Recommended places: 3 to 5, ordered by rating. For each:
+   - Name and rating
+   - Who it's for, in one line, flagging limits like "women only" or
+     "mainly for illegal drugs"
+   - Address, distance, and the directions link
+   - Opening hours, or "not listed"
+{RELEVANCE_RUBRIC}
+
+D. Who to contact first: the three best-rated places that can be reached, as a
+   compact list of name, phone, email, and when to call. Don't repeat their
+   descriptions. Prefer outreach or drop-in services when they fit the need.
+   - The directory lists facility contact details only, not named staff or
+     outreach workers. Never invent names, phone numbers, or email addresses.
+   - If fewer than three places have contact details, say so plainly. For those
+     places, give their source link (source_url), which often lists more contact
+     information; if there's none, give the address to visit during opening hours.
+
+E. What the directory doesn't cover, in one line, when it matters for this need
+   (e.g. self-help groups; coverage depends on which providers list services in
+   the area, mostly Caritas and DHS). Then
+   offer to look for something else or somewhere else.
+
+If nothing fits, say so honestly rather than suggesting unrelated services."""
 
 
 if __name__ == "__main__":

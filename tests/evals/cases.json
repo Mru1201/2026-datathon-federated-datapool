@@ -50,9 +50,22 @@
     "expect_args": {"facility_1": "Drehscheibe", "facility_2": "Metropolitankapitel"}
   },
   {
-    "id": "fix-first-berlin",
-    "prompt": "Which Berlin facility records should we fix first?",
-    "expect_tool": "records_to_fix_first",
-    "expect_args": {"city": "Berlin"}
+    "id": "nearby-postal-code",
+    "prompt": "I need addiction counselling near postal code 13353. What is close by?",
+    "expect_tool": "find_nearby",
+    "expect_args": {"location": "13353"}
+  },
+  {
+    "id": "nearby-coordinates",
+    "prompt": "Which social services are within 1 km of 52.5446,13.3592?",
+    "expect_tool": "find_nearby",
+    "expect_args": {"location": "52.54"}
+  },
+  {
+    "id": "awo-details-by-iri",
+    "prompt": "What are the opening hours and contact details of the facility https://civic-data.de/federated-directory#org-229a4e0b1081?",
+    "expect_tool": "get_awo_details",
+    "expect_args": {"iri": "org-229a4e0b1081"},
+    "answer_contains": ["WIGWAM"]
   }
 ]

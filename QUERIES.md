@@ -156,6 +156,17 @@ service matches are substrings (`CONTAINS`, no regex). Statistics trim values wi
 | `count_services_per_category.rq` | services per category | `generate_statistics` |
 | `count_services_per_audience.rq` | services per audience | `generate_statistics` |
 | `list_facility_cities_by_city_substring.rq` | `?facility ?city` rows whose city contains the text | tests only (independent reference) |
+| `list_facilities_by_bbox.rq` | facilities with coordinates inside a box, plus contacts, hours, audience, offers and provider | `find_nearby` |
+| `get_postal_code_location_by_postal_code.rq` | average coordinates (and count) of the addresses with a postal code | `find_nearby` (search origin) |
+| `get_facility_details_by_iri.rq` | one facility by IRI: address, contacts, hours, accessibility, offers, provider, source link | `get_awo_details` |
+
+**Numbers and IRIs as inputs.** Placeholders may only be string literals, and the naming
+check allows one `_by_` parameter. So `list_facilities_by_bbox.rq` takes a single
+`{{bbox}}` string (`"south,west,north,east"`, built and validated by `bounding_box()` in
+Python) and splits it with `STRBEFORE`/`STRAFTER` + `xsd:double`. `get_facility_details_by_iri.rq`
+turns `{{iri}}` into an IRI with `IRI("{{iri}}")`; `get_awo_details` only accepts IRIs under
+`cdf:` without spaces or IRI-breaking characters. `find_nearby` ranks and filters the box in
+Python: exact distance (haversine), comma-separated terms, and accessibility.
 
 ### How each tool maps to the old CSV logic
 

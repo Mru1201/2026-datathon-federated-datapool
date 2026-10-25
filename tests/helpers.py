@@ -103,6 +103,53 @@ def mcp_call(name: str, arguments: dict | None = None) -> tuple[bool, str]:
     return asyncio.run(run())
 
 
+def _mcp_session(action):
+    """Run action(session) against the real server over in-memory streams."""
+    from mcp.shared.memory import create_client_server_memory_streams
+    from mcp import ClientSession
+    import anyio
+
+    async def run():
+        result_store: list = []
+        lowlevel = _server()._lowlevel_server
+        async with create_client_server_memory_streams() as (client_streams, server_streams):
+            read_client, write_client = client_streams
+            read_server, write_server = server_streams
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(lowlevel.run, read_server, write_server,
+                              lowlevel.create_initialization_options())
+                async with ClientSession(read_client, write_client) as session:
+                    await session.initialize()
+                    result_store.append(await action(session))
+                    tg.cancel_scope.cancel()
+        return result_store[0]
+
+    return asyncio.run(run())
+
+
+def mcp_list_prompts():
+    """List the server's prompts over MCP."""
+
+    async def action(session):
+        return (await session.list_prompts()).prompts
+
+    return _mcp_session(action)
+
+
+def mcp_get_prompt(name: str, arguments: dict | None = None) -> str:
+    """Render a prompt over MCP and return the text of its messages."""
+
+    async def action(session):
+        result = await session.get_prompt(name, arguments or {})
+        return "".join(
+            message.content.text
+            for message in result.messages
+            if getattr(message.content, "text", None)
+        )
+
+    return _mcp_session(action)
+
+
 _MCP_RESULTS: dict = {}
 
 

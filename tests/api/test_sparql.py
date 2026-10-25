@@ -19,6 +19,9 @@ from tests.helpers import CachingSparqlClient, mcp_call_once
 
 pytestmark = pytest.mark.api
 
+# vista WIGWAM Connect, Berlin (present in the live directory and in data/directory.ttl)
+KNOWN_FACILITY_IRI = "https://civic-data.de/federated-directory#org-229a4e0b1081"
+
 
 @pytest.fixture(scope="module")
 def client():
@@ -200,6 +203,13 @@ MCP_CASES = {
         {"facility_1": "Drehscheibe", "facility_2": "Metropolitankapitel"},
         "compare_facilities", ("Drehscheibe", "Metropolitankapitel"),
     ),
+    "find_nearby": (
+        {"location": "10115", "radius_km": 1, "query": "Beratung"},
+        "find_nearby", ("10115", 1.0, "Beratung"),
+    ),
+    "get_awo_details": (
+        {"iri": KNOWN_FACILITY_IRI}, "get_awo_details", (KNOWN_FACILITY_IRI,),
+    ),
 }
 
 
@@ -211,3 +221,87 @@ def test_mcp_tool_returns_client_result(client, tool):
     assert json.loads(text) == getattr(client, method)(*args), (
         f"{tool}({arguments}) over MCP differs from SparqlClient.{method}{args}"
     )
+
+
+
+# ---- find_nearby / get_awo_details --------------------------------------------
+
+def expected_nearby(client: SparqlClient, latitude: float, longitude: float, radius_km: float) -> set:
+    """Facilities within radius_km: a plain coordinate query, distances in Python."""
+    from src.sparql_client import haversine_km
+
+    delta = radius_km / 100  # generous: 1/100 degree is >= 0.7 km at German latitudes
+    query = f"""
+        PREFIX schema: <http://schema.org/>
+        PREFIX org: <http://www.w3.org/ns/org#>
+        PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+        SELECT DISTINCT ?facility ?lat ?lon WHERE {{
+            ?facility a org:OrganizationalUnit ; schema:address ?a .
+            ?a a schema:PostalAddress ; schema:latitude ?lat ; schema:longitude ?lon .
+            FILTER(xsd:double(STR(?lat)) > {latitude - delta * 2}
+                   && xsd:double(STR(?lat)) < {latitude + delta * 2}
+                   && xsd:double(STR(?lon)) > {longitude - delta * 3}
+                   && xsd:double(STR(?lon)) < {longitude + delta * 3})
+        }}"""
+    return {
+        row["facility"]["value"]
+        for row in client.query(query)["results"]["bindings"]
+        if haversine_km(latitude, longitude, float(row["lat"]["value"]), float(row["lon"]["value"]))
+        <= radius_km
+    }
+
+
+def test_postal_code_origin_is_where_the_postal_code_is(client):
+    origin = client.resolve_location("10115")
+    assert origin and origin["matched_by"] == "postal_code", f"10115 did not resolve: {origin}"
+    assert 52.4 < origin["latitude"] < 52.6 and 13.3 < origin["longitude"] < 13.5, (
+        f"10115 (Berlin-Mitte) resolved to {origin}, outside central Berlin"
+    )
+
+
+@pytest.mark.parametrize("location, radius_km", [("10115", 1.0), ("48.1374,11.5755", 1.5)])
+def test_find_nearby_matches_independent_distance_check(client, location, radius_km):
+    result = client.find_nearby(location, radius_km=radius_km, limit=50)
+    origin = result["origin"]
+    expected = expected_nearby(client, origin["latitude"], origin["longitude"], radius_km)
+    assert expected, f"reference query found no facilities near {location}; endpoint data changed?"
+    assert result["total_found"] == len(expected), (
+        f"find_nearby({location!r}, {radius_km}) found {result['total_found']}, "
+        f"independent check found {len(expected)}"
+    )
+    found = [item["iri"] for item in result["results"]]
+    assert set(found) <= expected, f"results outside the radius: {sorted(set(found) - expected)[:5]}"
+    distances = [item["distance_km"] for item in result["results"]]
+    assert distances == sorted(distances), f"results not nearest first: {distances[:10]}"
+
+
+def test_find_nearby_query_only_narrows(client):
+    everything = client.find_nearby("10115", radius_km=1, limit=50)
+    sucht = client.find_nearby("10115", radius_km=1, query="Sucht", limit=50)
+    assert 0 < sucht["total_found"] <= everything["total_found"], (
+        f"query='Sucht' found {sucht['total_found']} of {everything['total_found']} near 10115"
+    )
+
+
+def test_get_awo_details_known_facility(client):
+    details = client.get_awo_details(KNOWN_FACILITY_IRI)
+    assert details and details["name"] == "vista WIGWAM Connect", f"got {pretty_details(details)}"
+    assert details["address"] and "Berlin" in details["address"], details["address"]
+    assert details["map_url"].startswith("https://www.google.com/maps/"), details["map_url"]
+
+
+def test_get_awo_details_agrees_with_find_nearby(client):
+    nearest = client.find_nearby("10115", radius_km=1, limit=1)["results"][0]
+    details = client.get_awo_details(nearest["iri"])
+    assert details and details["name"] == nearest["name"], (
+        f"get_awo_details({nearest['iri']}) name {details and details['name']!r} != {nearest['name']!r}"
+    )
+    assert details["address"] == nearest["address"]
+
+
+def test_get_awo_details_unknown_iri(client):
+    assert client.get_awo_details(KNOWN_FACILITY_IRI + "-does-not-exist") is None
+
+
+def pretty_details(details):
+    return json.dumps(details, ensure_ascii=False)[:300] if details else details
