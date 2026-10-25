@@ -166,16 +166,11 @@
     "answer_contains": ["WIGWAM"]
   },
   {
-    "id": "find-help-debt",
-    "prompt": "Ich habe Schulden und weiß nicht weiter. Wo bekomme ich Hilfe?",
-    "expect_tool": "find_social_help",
-    "expect_args": {"need": "debt"}
-  },
-  {
-    "id": "find-help-addiction-english",
-    "prompt": "I think my brother has an alcohol problem. Where can he get help?",
-    "expect_tool": "find_social_help",
-    "expect_args": {"need": "addiction"}
+    "id": "awo-details-accessibility",
+    "prompt": "I use a wheelchair. Can I get into the facility https://civic-data.de/federated-directory#org-229a4e0b1081, and where exactly is it?",
+    "expect_tool": "get_awo_details",
+    "expect_args": {"iri": "org-229a4e0b1081"},
+    "answer_contains": ["Stromstraße"]
   },
   {
     "id": "entity-card-by-iri",
@@ -185,15 +180,34 @@
     "answer_contains": ["11"]
   },
   {
+    "id": "entity-card-service-to-office",
+    "prompt": "Welche Einrichtung bietet das Angebot https://civic-data.de/federated-directory#service-04b4dec19d58 an, und welche Kontaktdaten sind dort eingetragen?",
+    "expect_tool": "get_entity_card",
+    "expect_args": {"iri": "service-04b4dec19d58"},
+    "answer_contains": ["Frauenladen"]
+  },
+  {
     "id": "service-candidates-with-office",
     "prompt": "Find debt counselling services (Schuldnerberatung) and tell me which office runs each one and where it is.",
     "expect_tool": "search_service_candidates",
     "expect_args": {"query": "schuldner"}
   },
   {
+    "id": "service-candidates-senioren-german",
+    "prompt": "Welche Angebote für Senioren gibt es im Verzeichnis, und welche Stelle bietet jeweils das Angebot an?",
+    "expect_tool": "search_service_candidates",
+    "expect_args": {"query": "senior"}
+  },
+  {
     "id": "directory-count-with-phone",
     "prompt": "How many debt counselling (Schuldner) facility records in Berlin-Kreuzberg have a telephone number on record?",
     "expect_tool": "search_directory",
     "expect_args": {"query": "schuldner"}
+  },
+  {
+    "id": "directory-sucht-with-phone-german",
+    "prompt": "Ich suche Suchtberatungsstellen im Postleitzahlgebiet 10997, aber nur solche, bei denen eine Telefonnummer eingetragen ist.",
+    "expect_tool": "search_directory",
+    "expect_args": {"query": "sucht", "has_telephone": true}
   }
 ]

@@ -294,11 +294,60 @@ the graph's triples (rdflib, not the `.rq` files).
 | `test_wrong_argument_type_is_an_error` | wrong type rejected |
 | `test_unknown_tool_is_an_error` | unknown tool → error |
 | `test_server_starts_over_stdio` | `python server.py` starts and completes the MCP handshake |
-| `test_get_awo_details_unknown_iri_is_a_message_not_an_error` | unknown IRI → "No facility found" text, not an MCP error |
-| `test_find_nearby_unresolvable_location_reports_error` | a street name → JSON with `error` and no results |
-| `test_every_active_case_can_be_run_on_this_server` | (`test_benchmark_suites.py`) every active benchmark case expects at least one tool that `server.py` lists |
+
+### `test_benchmark_suites.py` – the benchmark against the real server
+
+| Test | Checks |
+|---|---|
+| `test_every_active_case_can_be_run_on_this_server` | every active benchmark case expects at least one tool that `server.py` lists |
 | `test_aspirational_cases_really_need_missing_tools` | an aspirational case whose missing tool now exists fails, so it gets activated |
 | `test_oracle_benchmark_runs_end_to_end_offline` | oracle run in-process on `directory.ttl`: passes with all tools, `baseline` hides `get_entity_card`, paired report and CSVs are written |
+
+### `test_tools_e2e.py` – two end-to-end tests per feature
+
+Each tool and the `find_help` prompt has two tests named `test_e2e_<feature>_…`. Expected
+values come straight from `data/directory.ttl` (or, for duplicates, a small Turtle snippet
+the server is switched to for one call).
+
+| Test | Checks |
+|---|---|
+| `test_every_feature_has_two_e2e_tests` | **fails when a tool or prompt has fewer than two `test_e2e_<feature>_…` tests** |
+| `test_e2e_count_facilities_matches_graph` | `count_facilities(Berlin)` == facilities whose address is in Berlin in the graph |
+| `test_e2e_count_facilities_is_case_insensitive_and_exact` | BERLIN, berlin-mitte, Atlantis: counts equal the graph's; Berlin-Mitte is not part of Berlin |
+| `test_e2e_search_facilities_returns_exactly_the_city_facilities` | IRIs == the graph's Berlin facilities, none twice |
+| `test_e2e_search_facilities_fields_come_from_the_graph` | Berlin-Mitte: name, street, postal code, city, phone, email, homepage == the graph's values |
+| `test_e2e_get_facility_details_partial_name_finds_every_match` | `BERATUNG` finds exactly the facilities whose name contains "beratung" |
+| `test_e2e_get_facility_details_includes_address_and_provider` | Drehscheibe: address and provider (IRI, name, homepage) == the graph's links |
+| `test_e2e_compare_facilities_equals_two_detail_lookups` | result == two `get_facility_details` calls, both non-empty |
+| `test_e2e_compare_facilities_keeps_order_and_reports_unknown_as_empty` | order kept; an unknown name gives `matches: []`, the other side is still found |
+| `test_e2e_search_services_matches_name_category_or_audience` | `MEDIKAMENT` finds exactly the services with it in name, category or audience (incl. audience-only ones) |
+| `test_e2e_search_services_no_match_and_quotes_stay_literal` | no match and a quote-breaking query (`") or true or ("`-style) both give `[]` |
+| `test_e2e_find_social_help_matches_the_need_with_phones_first` | addiction: `total_matches` == the graph's services matching the need's terms; every result on topic; phone numbers first |
+| `test_e2e_find_social_help_postal_prefix_and_unknown_need` | prefix 109 narrows the debt results and every result starts with 109; "pizza" returns the valid needs |
+| `test_e2e_generate_statistics_dataset_sizes_match_graph` | dataset sizes == entities per RDF class in the graph |
+| `test_e2e_generate_statistics_city_counts_agree_with_count_facilities` | every `facilities_by_city` entry == `count_facilities` for that city |
+| `test_e2e_check_completeness_rows_match_dataset_sizes` | rows == dataset sizes; IRI never missing; missing cells == sum of columns |
+| `test_e2e_check_completeness_missing_counts_match_graph` | every facility column: missing == facilities without a non-blank value in the graph |
+| `test_e2e_detect_duplicates_directory_is_clean` | directory.ttl → `{}` |
+| `test_e2e_detect_duplicates_finds_injected_duplicate` | snippet with two identical facilities and one different → one group with exactly the two IRIs |
+| `test_e2e_list_providers_lists_every_provider` | IRIs == the graph's named providers; sorted by name |
+| `test_e2e_list_providers_homepage_and_address_come_from_the_graph` | homepage and address of each provider == the graph's values |
+| `test_e2e_search_by_postal_code_returns_exactly_that_area` | 10115: IRIs == facilities with that postal code in the graph |
+| `test_e2e_search_by_postal_code_partial_or_unknown_finds_nothing` | 4 or 6 digits, unknown code or a quote-breaking input → `[]` |
+| `test_e2e_records_to_fix_first_ranks_only_the_city` | every Berlin facility ranked once; bucket and priority counts add up; ranks 1…n; high → medium → low |
+| `test_e2e_records_to_fix_first_bucket_filter_and_provider_batches` | `bucket=scope_check` returns exactly that bucket; provider batches cover every facility except scope-check/junk |
+| `test_e2e_find_nearby_matches_distances_from_the_graph` | 13353, 1 km: origin == average of its addresses; results == facilities within 1 km by haversine on the graph; distances match; nearest first |
+| `test_e2e_find_nearby_unresolvable_location_reports_error` | a street name → JSON with `error` and no results |
+| `test_e2e_get_awo_details_known_facility_matches_graph` | org-229a4e0b1081: name, phone, email, hours and address == the graph's; map link points at its coordinates |
+| `test_e2e_get_awo_details_unknown_iri_is_a_message_not_an_error` | unknown IRI → "No facility found" text, not an MCP error |
+| `test_e2e_get_entity_card_fields_and_links_match_graph` | Frauenladen: fields == the graph's values, `missing_fields` == fields the graph lacks, address link and linked services == the graph's |
+| `test_e2e_get_entity_card_service_resolves_to_its_office` | a service card resolves `schema:provider` to the graph's facility with its name; unknown IRI → `not_found`, malformed → `invalid_iri` |
+| `test_e2e_search_service_candidates_total_and_offices_match_graph` | "Schuldner": service IDs == the graph's matching services; each office id, name and locality == the graph's |
+| `test_e2e_search_service_candidates_paging_covers_every_match` | "Beratung" in pages of 7: every matching service exactly once, `next_offset` ends with `None` |
+| `test_e2e_search_directory_matches_facility_service_or_address_text` | "Schuldner" (and "Schuldner Kreuzberg") == facilities with the term(s) in their own text, address or a linked service |
+| `test_e2e_search_directory_telephone_filter_and_summaries_cover_all_matches` | "Beratung": `missing_counts` cover all matches, not the page; `has_telephone` keeps exactly the graph's facilities with a phone; too-short query → error |
+| `test_e2e_find_help_prompt_is_listed_and_renders` | `find_help` is listed with optional `situation`/`location`, renders with the inputs and tool names, has no unfilled placeholders, and says "not given yet" without inputs |
+| `test_e2e_find_help_prompt_only_uses_tools_and_arguments_that_exist` | the tools, `find_nearby` arguments and `source_url` field the prompt names all exist on the server |
 | `test_find_help_prompt_is_listed_and_renders` | `find_help` is listed with optional `situation`/`location`, renders with the inputs and tool names, has no unfilled placeholders, and says "not given yet" without inputs |
 
 ## Layer 3 – SPARQL API (`tests/api/test_sparql.py`)
@@ -374,11 +423,37 @@ Each failed run is labelled with the **stage** where it broke:
 7. `model gave no final answer`
 8. `final answer missing expected content` – e.g. the real number from the tool
 
-Cases (`tests/evals/cases.json`): `count-berlin`, `search-facilities-berlin`,
-`facility-details`, `search-services-sucht`, `duplicates`, `completeness`, `statistics`, `compare`,
-`fix-first-berlin`, `nearby-postal-code`, `nearby-coordinates`, `awo-details-by-iri`,
-`find-help-debt`, `find-help-addiction-english`, `entity-card-by-iri`,
-`service-candidates-with-office`, `directory-count-with-phone`.
+Cases (`tests/evals/cases.json`): **two per tool**, written the way real users ask (German
+and English, everyday wording, some needing optional arguments). Only the model's **first**
+tool call is scored.
+
+| Tool | Cases | What the second case adds |
+|---|---|---|
+| `count_facilities` | `count-berlin`, `count-muenchen-german` | German question; city must stay "München" (not "Munich") |
+| `search_facilities` | `search-facilities-berlin`, `search-facilities-koeln-german` | German, asks for a list with contacts (list, not count) |
+| `get_facility_details` | `facility-details`, `facility-details-who-runs-it` | quoted name in a casual question about the provider |
+| `search_services` | `search-services-sucht`, `search-services-catalogue-pflege` | catalogue search by a maintainer, not a person seeking help |
+| `find_social_help` | `find-help-debt`, `find-help-addiction-english` | need stated indirectly in English ("alcohol problem" → `addiction`) |
+| `detect_duplicates` | `duplicates`, `duplicates-before-publishing` | "entered twice" instead of "duplicate" |
+| `check_completeness` | `completeness`, `completeness-missing-phone-german` | German question about one column (phone) |
+| `generate_statistics` | `statistics`, `statistics-top-city-and-category` | a concrete question the statistics answer, without the word "statistics" |
+| `compare_facilities` | `compare`, `compare-side-by-side` | "side by side", argument order kept |
+| `list_providers` | `list-providers`, `list-providers-german` | German "Träger" |
+| `search_by_postal_code` | `postal-code-exact-area`, `postal-code-german` | must pick the exact postal code search, not `find_nearby` |
+| `records_to_fix_first` | `fix-first-berlin`, `fix-first-outreach-by-provider` | optional `group_by="provider"` for provider outreach |
+| `find_nearby` | `nearby-postal-code`, `nearby-coordinates` | coordinates instead of a postal code |
+| `get_awo_details` | `awo-details-by-iri`, `awo-details-accessibility` | accessibility question; answer must contain the street |
+| `get_entity_card` | `entity-card-by-iri`, `entity-card-service-to-office` | German; a service IRI whose office must be followed (answer names Frauenladen) |
+| `search_service_candidates` | `service-candidates-with-office`, `service-candidates-senioren-german` | German; matches the audience/category "Senioren" |
+| `search_directory` | `directory-count-with-phone`, `directory-sucht-with-phone-german` | German; optional `has_telephone=true` filter |
+
+`tests/evals/test_cases.py` checks the cases **offline** (no LLM, runs in CI with layers 1+2):
+
+| Test | Checks |
+|---|---|
+| `test_eval_case_ids_are_unique` | no two cases share an id |
+| `test_every_tool_has_two_eval_cases` | **fails when a tool has fewer than two cases in `cases.json`** |
+| `test_eval_case_expects_a_valid_call` (×1 per case) | the expected tool exists, takes every expected argument, and runs with them on the offline server without an MCP error |
 
 The same file is the `smoke` suite of the benchmark (`python -m benchmarking.run_benchmark
 --suites smoke`), which can also run it against cloud models, compare tool profiles and
