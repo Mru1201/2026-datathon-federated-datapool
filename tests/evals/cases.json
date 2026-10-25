@@ -7,10 +7,22 @@
     "answer_contains": ["646"]
   },
   {
+    "id": "count-muenchen-german",
+    "prompt": "Wie viele soziale Einrichtungen gibt es eigentlich in München?",
+    "expect_tool": "count_facilities",
+    "expect_args": {"city": "München"}
+  },
+  {
     "id": "search-facilities-berlin",
     "prompt": "List the AWO facilities located in Berlin with their contact info.",
     "expect_tool": "search_facilities",
     "expect_args": {"city": "Berlin"}
+  },
+  {
+    "id": "search-facilities-koeln-german",
+    "prompt": "Kannst du mir alle Einrichtungen in Köln mit Adresse, Telefonnummer und E-Mail auflisten?",
+    "expect_tool": "search_facilities",
+    "expect_args": {"city": "Köln"}
   },
   {
     "id": "facility-details",
@@ -20,14 +32,45 @@
     "answer_contains": ["Drehscheibe"]
   },
   {
+    "id": "facility-details-who-runs-it",
+    "prompt": "Someone told me about \"Haus Lübecker Straße\". Who runs it and what's the address?",
+    "expect_tool": "get_facility_details",
+    "expect_args": {"name": "Lübecker"},
+    "answer_contains": ["Lübecker"]
+  },
+  {
     "id": "search-services-sucht",
     "prompt": "Which services do you offer around Suchtberatung?",
     "expect_tool": "search_services",
     "expect_args": {"query": "Suchtberatung"}
   },
   {
+    "id": "search-services-catalogue-pflege",
+    "prompt": "I'm cleaning up our service catalogue. Search it for everything with \"Pflege\" in it and show me the service names and categories.",
+    "expect_tool": "search_services",
+    "expect_args": {"query": "Pflege"}
+  },
+  {
+    "id": "find-help-debt",
+    "prompt": "Ich habe Schulden und weiß nicht weiter. Wo bekomme ich Hilfe?",
+    "expect_tool": "find_social_help",
+    "expect_args": {"need": "debt"}
+  },
+  {
+    "id": "find-help-addiction-english",
+    "prompt": "I think my brother has an alcohol problem. Where can he get help?",
+    "expect_tool": "find_social_help",
+    "expect_args": {"need": "addiction"}
+  },
+  {
     "id": "duplicates",
     "prompt": "Are there any exact duplicate rows in the AWO datasets?",
+    "expect_tool": "detect_duplicates",
+    "expect_args": {}
+  },
+  {
+    "id": "duplicates-before-publishing",
+    "prompt": "Before we publish the directory: can you check whether any facility, address or provider was entered twice?",
     "expect_tool": "detect_duplicates",
     "expect_args": {}
   },
@@ -38,8 +81,20 @@
     "expect_args": {}
   },
   {
+    "id": "completeness-missing-phone-german",
+    "prompt": "Bei wie viel Prozent der Einrichtungen fehlt die Telefonnummer?",
+    "expect_tool": "check_completeness",
+    "expect_args": {}
+  },
+  {
     "id": "statistics",
     "prompt": "Give me overall statistics about the AWO datasets.",
+    "expect_tool": "generate_statistics",
+    "expect_args": {}
+  },
+  {
+    "id": "statistics-top-city-and-category",
+    "prompt": "Which city has the most facilities in the directory, and what is the most common facility category?",
     "expect_tool": "generate_statistics",
     "expect_args": {}
   },
@@ -50,10 +105,46 @@
     "expect_args": {"facility_1": "Drehscheibe", "facility_2": "Metropolitankapitel"}
   },
   {
+    "id": "compare-side-by-side",
+    "prompt": "My dad can't decide between Drehscheibe and Haus Lübecker Straße. Can you put the two side by side for me?",
+    "expect_tool": "compare_facilities",
+    "expect_args": {"facility_1": "Drehscheibe", "facility_2": "Lübecker"}
+  },
+  {
+    "id": "list-providers",
+    "prompt": "Which provider organisations are in the directory? Please include their websites.",
+    "expect_tool": "list_providers",
+    "expect_args": {}
+  },
+  {
+    "id": "list-providers-german",
+    "prompt": "Welche Träger sind im Verzeichnis eingetragen und wo sitzen sie?",
+    "expect_tool": "list_providers",
+    "expect_args": {}
+  },
+  {
+    "id": "postal-code-exact-area",
+    "prompt": "Show me only the facilities whose address is in postal code 10115, not the surrounding area.",
+    "expect_tool": "search_by_postal_code",
+    "expect_args": {"postal_code": "10115"}
+  },
+  {
+    "id": "postal-code-german",
+    "prompt": "Welche Einrichtungen haben die Postleitzahl 13353?",
+    "expect_tool": "search_by_postal_code",
+    "expect_args": {"postal_code": "13353"}
+  },
+  {
     "id": "fix-first-berlin",
     "prompt": "Which Berlin facility records should we fix first?",
     "expect_tool": "records_to_fix_first",
     "expect_args": {"city": "Berlin"}
+  },
+  {
+    "id": "fix-first-outreach-by-provider",
+    "prompt": "We want to email providers next week about the gaps in their Berlin records. Group what needs fixing by provider, so we send one request each.",
+    "expect_tool": "records_to_fix_first",
+    "expect_args": {"city": "Berlin", "group_by": "provider"}
   },
   {
     "id": "nearby-postal-code",

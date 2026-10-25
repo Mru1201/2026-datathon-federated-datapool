@@ -7,10 +7,10 @@ case), so a red test tells you where to look without a debugger.
 | Layer | Folder | Needs | Runs in CI |
 |---|---|---|---|
 | 1. Unit (incl. SPARQL parity) | `tests/unit/` | nothing (offline, rdflib) | every push/PR (hosted runner) |
-| 2. MCP protocol | `tests/protocol/` | nothing (offline: tools read `data/directory.ttl`) | every push/PR (hosted runner) |
+| 2. MCP protocol + end-to-end | `tests/protocol/` | nothing (offline: tools read `data/directory.ttl`) | every push/PR (hosted runner) |
 | 3. SPARQL API | `tests/api/` | live SPARQL endpoint (skipped if unreachable) | **manual** (hosted runner) |
 | 4. Connection smoke | `tests/llm/` | Open WebUI + API key | manual (self-hosted runner) |
-| 5. Tool-calling evals | `tests/evals/` | Open WebUI + API key | manual (self-hosted runner) |
+| 5. Tool-calling evals | `tests/evals/` | Open WebUI + API key (`test_cases.py`: nothing) | manual (self-hosted runner); `test_cases.py` on every push/PR |
 
 Beyond the pytest layers, `benchmarking/` runs larger case suites (multilingual,
 professional handoff) against any LLM with deeper scoring and reports. It reads the same
@@ -270,14 +270,17 @@ Offline, no LLM: scripted models, a fake tool runner, and a stand-in `litellm` m
 | `test_compare_facilities_returns_both_sides` | both searches returned in order, each with a match |
 | `test_compare_facilities_unknown_name_gives_empty_matches` | unknown facility → empty matches |
 
-## Layer 2 – MCP protocol tests (`tests/protocol/test_server.py`)
+## Layer 2 – MCP protocol and end-to-end tests (`tests/protocol/`)
 
 Talks to the real `server.py` through an in-memory MCP client (plus one stdio launch).
 **Offline:** `tests/protocol/conftest.py` swaps the server's SPARQL client for
 `LocalSparqlClient` on `data/directory.ttl`, so every tool runs its real `.rq` queries without
 any request to the endpoint. The stdio launch only lists tools, so it sends no queries either.
-This layer checks the MCP plumbing. Whether the results are correct is checked in layer 1
-(parity) and layer 3 (live).
+`test_server.py` checks the MCP plumbing for every tool. `test_tools_e2e.py` checks each
+feature end to end: what a client gets over MCP is compared with facts read directly from
+the graph's triples (rdflib, not the `.rq` files).
+
+### `test_server.py` – MCP plumbing
 
 | Test | Checks |
 |---|---|
@@ -383,10 +386,11 @@ add the citizen, multilingual and professional suites.
 
 ### Testing a new feature
 1. Add valid arguments to `SMOKE_ARGS` in `tests/protocol/test_server.py`.
+   Add two end-to-end tests named `test_e2e_<tool>_…` to `tests/protocol/test_tools_e2e.py`.
 2. Put the query in `sparql_queries/` (naming schema in `QUERIES.md`), add a `SparqlClient`
    method, and add tests: offline ones in `tests/unit/` (`make_sources("""<Turtle>""")` or
    `LocalSparqlClient(load_graph(...))`) and live ones in `tests/api/`.
-3. Add an entry to `tests/evals/cases.json`:
+3. Add two entries to `tests/evals/cases.json` (realistic prompts; `test_cases.py` enforces two):
    ```json
    {"id": "my-feature", "prompt": "Natural-language question",
     "expect_tool": "my_tool", "expect_args": {"param": "substring"},

@@ -29,7 +29,9 @@ def count_facilities(city: str) -> int:
     social support services in Germany (live SPARQL API).
 
     Args:
-        city: City name, for example "Berlin".
+        city: German city name as written in Germany, for example "Berlin",
+            "München" or "Köln". Never translate it ("Munich", "Cologne"
+            match nothing).
     """
 
     return sparql.count_facilities(city)
@@ -58,7 +60,9 @@ def search_facilities(city: str) -> str:
     Search for facilities in a city.
 
     Args:
-        city: City name, for example "Berlin".
+        city: German city name as written in Germany, for example "Berlin",
+            "München" or "Köln". Never translate it ("Munich", "Cologne"
+            match nothing).
 
     Returns:
         JSON containing matching facilities and their basic contact/address information.
