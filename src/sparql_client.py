@@ -80,6 +80,19 @@ DATASETS = {
 }
 
 
+# Help needs for find_social_help: need -> German search terms (casefolded). The LLM maps the
+# user's request, in any language, to one of these keys; the terms are matched in the German
+# service names and categories of the directory.
+HELP_NEEDS = {
+    "debt": ["schuldner", "insolvenz"],
+    "housing": ["wohnungsnot", "obdach", "wohnhilfe"],
+    "family": ["familie", "kinder", "jugend"],
+    "elderly": ["senioren", "pflege", "sozialstation"],
+    "addiction": ["sucht", "drogen", "alkohol"],
+    "migration": ["migration", "zugewandert", "flucht"],
+}
+
+
 def escape_literal(value: str) -> str:
     """Escape a Python string for use inside a double-quoted SPARQL literal."""
 
@@ -391,6 +404,45 @@ class SparqlClient:
             }
             for row in self.select("list_services_by_query", query=query.casefold())
         ]
+
+    def find_help(self, need: str, limit: int = 5, postal_code_prefix: str = "") -> dict:
+        """Find services for a need (one of HELP_NEEDS), with where to go and how to call."""
+
+        need = need.strip().casefold()
+        if need not in HELP_NEEDS:
+            return {
+                "error": f"Unknown need '{need}'.",
+                "valid_needs": list(HELP_NEEDS),
+            }
+
+        limit = max(1, min(int(limit), 10))
+        prefix = postal_code_prefix.strip()
+
+        found = self.select("list_help_services_by_terms", terms="|".join(HELP_NEEDS[need]))
+        if prefix:
+            found = [row for row in found if (row["postal_code"] or "").startswith(prefix)]
+
+        # Entries with a phone number first: a person in need can act on those.
+        found.sort(key=lambda row: row["telephone"] is None)
+
+        return {
+            "need": need,
+            "total_matches": len(found),
+            "showing": min(limit, len(found)),
+            "results": [
+                {
+                    "service": row["name"],
+                    "category": row["category"],
+                    "facility": row["facility_name"],
+                    "street": row["street"],
+                    "postal_code": row["postal_code"],
+                    "city": row["city"],
+                    "telephone": row["telephone"],
+                    "email": row["email"],
+                }
+                for row in found[:limit]
+            ],
+        }
 
     def detect_duplicates(self) -> dict:
         """

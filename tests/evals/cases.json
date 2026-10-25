@@ -67,5 +67,17 @@
     "expect_tool": "get_awo_details",
     "expect_args": {"iri": "org-229a4e0b1081"},
     "answer_contains": ["WIGWAM"]
+  },
+  {
+    "id": "find-help-debt",
+    "prompt": "Ich habe Schulden und weiß nicht weiter. Wo bekomme ich Hilfe?",
+    "expect_tool": "find_social_help",
+    "expect_args": {"need": "debt"}
+  },
+  {
+    "id": "find-help-addiction-english",
+    "prompt": "I think my brother has an alcohol problem. Where can he get help?",
+    "expect_tool": "find_social_help",
+    "expect_args": {"need": "addiction"}
   }
 ]

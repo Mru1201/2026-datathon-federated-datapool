@@ -21,6 +21,7 @@ SMOKE_ARGS = {
     "search_facilities": {"city": "Berlin"},
     "get_facility_details": {"name": "Drehscheibe"},
     "search_services": {"query": "Suchtberatung"},
+    "find_social_help": {"need": "debt", "limit": 3},
     "detect_duplicates": {},
     "check_completeness": {},
     "generate_statistics": {},
