@@ -1,2 +1,3 @@
 # Runtime dependencies of server.py. The SPARQL client uses only the standard library.
 mcp>=2
+pandas>=2.2.0

@@ -48,5 +48,11 @@
     "prompt": "Compare the facilities Drehscheibe and Metropolitankapitel.",
     "expect_tool": "compare_facilities",
     "expect_args": {"facility_1": "Drehscheibe", "facility_2": "Metropolitankapitel"}
+  },
+  {
+    "id": "fix-first-berlin",
+    "prompt": "Which Berlin facility records should we fix first?",
+    "expect_tool": "records_to_fix_first",
+    "expect_args": {"city": "Berlin"}
   }
 ]

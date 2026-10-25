@@ -61,6 +61,7 @@ Tools never build query strings themselves. User input only reaches a query thro
 | `generate_statistics()` | Dataset sizes; facilities per city, category and provider; services per category and audience; how many facilities have an address or provider | "Give me statistics about the directory" |
 | `check_completeness()` | Missing values per dataset and column | "Which columns have missing values?" |
 | `detect_duplicates()` | Groups of entries that are identical except for their IRI | "Are there duplicate entries?" |
+| `records_to_fix_first(city, ...)` | Facility records of a city ranked by how much fixing them matters, with reasons, provider batches and a projected coverage gain | "Which Berlin records should we fix first?" |
 
 Matching is case-insensitive (`GIESSEN` finds `Gießen`). City matches are **exact**, so
 `Berlin` does not include `Berlin-Mitte`. Name and service searches are substring matches.
