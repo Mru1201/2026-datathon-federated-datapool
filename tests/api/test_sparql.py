@@ -221,6 +221,10 @@ MCP_CASES = {
     "search_directory": (
         {"query": "Schuldner Kreuzberg"}, "search_directory", ("Schuldner Kreuzberg",),
     ),
+    "count_facilities_per_postal_code": (
+        {"postal_code_prefix": "10", "order": "lowest_per_10k", "limit": 5},
+        "count_facilities_per_postal_code", ("10", "lowest_per_10k", 5),
+    ),
 }
 
 

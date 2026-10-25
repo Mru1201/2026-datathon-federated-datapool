@@ -198,6 +198,34 @@ def search_by_postal_code(postal_code: str) -> str:
 
 
 @mcp.tool()
+def count_facilities_per_postal_code(
+    postal_code_prefix: str = "",
+    order: str = "most_facilities",
+    limit: int = 20,
+) -> str:
+    """
+    Count welfare facilities per German postal code, with inhabitants and facilities
+    per 10,000 inhabitants. Use it to compare areas or find under-served ones.
+
+    Args:
+        postal_code_prefix: Optional start of a postal code, e.g. "10" for central Berlin
+            or "13353" for one code. Empty means all of Germany.
+        order: "most_facilities" (default), "highest_per_10k" or "lowest_per_10k".
+            "lowest_per_10k" lists populated codes without any facility first.
+        limit: How many postal codes to return (1-100, default 20).
+
+    Returns:
+        JSON with totals for the prefix (postal codes, codes without facilities,
+        facilities, inhabitants, facilities per 10k), the number of facilities in the whole
+        directory whose postal code is malformed, and results per postal code.
+        Inhabitants are estimates (a municipality's population spread evenly over its
+        postal codes); say so when you compare codes within one city.
+    """
+
+    return to_json(sparql.count_facilities_per_postal_code(postal_code_prefix, order, limit))
+
+
+@mcp.tool()
 def records_to_fix_first(
     city: str = "Berlin",
     provider: str | None = None,

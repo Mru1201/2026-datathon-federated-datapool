@@ -6,6 +6,7 @@ triples with rdflib, not through the queries or SparqlClient, so a wrong query, 
 result shape or broken MCP plumbing all show up here.
 """
 
+import csv
 import json
 import re
 import urllib.parse
@@ -15,6 +16,7 @@ import pytest
 from rdflib import Namespace, URIRef
 from rdflib.namespace import RDF
 
+from conftest import DATA_DIR
 from src.fix_first import decode_source_link
 from src.quality_report import UNKNOWN_ORIGIN
 from src.sparql_client import DATASETS, HELP_NEEDS, expand, haversine_km
@@ -437,6 +439,43 @@ def test_e2e_search_by_postal_code_partial_or_unknown_finds_nothing():
         assert call_json("search_by_postal_code", {"postal_code": postal_code}, once=False) == [], (
             f"search_by_postal_code({postal_code!r}) should find nothing (exact five digits)"
         )
+
+
+# ---- count_facilities_per_postal_code --------------------------------------------
+
+def census_inhabitants():
+    with open(DATA_DIR / "einwohner_plz_de.csv", newline="", encoding="utf-8") as f:
+        return {row["plz"]: int(row["population"]) for row in csv.DictReader(f)}
+
+
+def test_e2e_count_facilities_per_postal_code_counts_match_graph_and_census(graph):
+    result = call_json("count_facilities_per_postal_code", {"postal_code_prefix": "10", "limit": 100})
+    inhabitants = census_inhabitants()
+    in_prefix = facilities_where(graph, SCHEMA.postalCode, lambda found: (found or "").strip().startswith("10"))
+    assert result["facilities"] == len(in_prefix) > 0
+    assert result["showing"] == len(result["results"]) == result["postal_codes"], (
+        "limit 100 should show every postal code starting with 10"
+    )
+    for row in result["results"]:
+        code = row["postal_code"]
+        expected = facilities_where(graph, SCHEMA.postalCode, lambda found: (found or "").strip() == code)
+        assert row["facilities"] == len(expected), f"facility count of {code}"
+        assert row["inhabitants"] == inhabitants.get(code), f"inhabitants of {code}"
+    counts = [row["facilities"] for row in result["results"]]
+    assert counts == sorted(counts, reverse=True), "most_facilities should sort by count, descending"
+    assert result["postal_codes_without_facilities"] == counts.count(0) > 0
+
+
+def test_e2e_count_facilities_per_postal_code_density_orders_and_unknown_order():
+    lowest = call_json("count_facilities_per_postal_code", {"postal_code_prefix": "10", "order": "lowest_per_10k", "limit": 100})
+    highest = call_json("count_facilities_per_postal_code", {"postal_code_prefix": "10", "order": "highest_per_10k", "limit": 100})
+    densities = [row["facilities_per_10k_inhabitants"] for row in lowest["results"]]
+    assert densities == sorted(densities) and densities[0] == 0
+    assert [row["facilities_per_10k_inhabitants"] for row in highest["results"]] == sorted(densities, reverse=True)
+    for row in highest["results"]:
+        assert row["facilities_per_10k_inhabitants"] == round(row["facilities"] / row["inhabitants"] * 10_000, 2)
+    unknown = call_json("count_facilities_per_postal_code", {"order": "pizza"}, once=False)
+    assert "error" in unknown and "lowest_per_10k" in unknown["valid_orders"]
 
 
 # ---- records_to_fix_first --------------------------------------------------------

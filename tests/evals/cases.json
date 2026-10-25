@@ -135,6 +135,18 @@
     "expect_args": {"postal_code": "13353"}
   },
   {
+    "id": "postal-code-density",
+    "prompt": "Which postal codes starting with 10 have the most facilities per 10,000 inhabitants?",
+    "expect_tool": "count_facilities_per_postal_code",
+    "expect_args": {"postal_code_prefix": "10", "order": "highest_per_10k"}
+  },
+  {
+    "id": "postal-code-underserved-german",
+    "prompt": "In welchen Berliner Postleitzahlgebieten (13…) gibt es im Verhältnis zur Einwohnerzahl die wenigsten Einrichtungen?",
+    "expect_tool": "count_facilities_per_postal_code",
+    "expect_args": {"postal_code_prefix": "13", "order": "lowest_per_10k"}
+  },
+  {
     "id": "fix-first-berlin",
     "prompt": "Which Berlin facility records should we fix first?",
     "expect_tool": "records_to_fix_first",
