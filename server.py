@@ -99,6 +99,29 @@ def search_services(query: str) -> str:
 
 
 @mcp.tool()
+def find_social_help(need: str, limit: int = 5, postal_code_prefix: str = "") -> str:
+    """
+    Find social-service offers in the directory for a person's need.
+
+    Args:
+        need: One of "debt", "housing", "family", "elderly", "addiction", "migration".
+            Choose the closest one for the user's request, in any language.
+        limit: How many offers to return (1-10, default 5).
+        postal_code_prefix: Optional start of a German postcode, e.g. "10" or "10997",
+            to only return offers there.
+
+    Returns:
+        JSON with total_matches and results (service, category, facility, address,
+        telephone, email). A null field means "not on record": say so and suggest
+        contacting the organisation; never invent a phone number or an address.
+        Names and addresses are German; keep them unchanged. This is directory
+        information, not advice. An unknown need returns the list of valid needs.
+    """
+
+    return to_json(sparql.find_help(need, limit, postal_code_prefix))
+
+
+@mcp.tool()
 def check_completeness() -> str:
     """
     Check completeness of all datasets (facilities, addresses,

@@ -143,6 +143,7 @@ service matches are substrings (`CONTAINS`, no regex). Statistics trim values wi
 | `list_facility_details_by_name.rq` | facility details, address and provider for a name substring | `get_facility_details`, `compare_facilities` |
 | `list_facility_quality_fields_by_city.rq` | every field the data quality ranking checks, for the facilities of a city | `records_to_fix_first` |
 | `list_services_by_query.rq` | services whose name/category/audience contains the query | `search_services` |
+| `list_help_services_by_terms.rq` | services whose name/category matches any need term, with provider facility, address and contacts | `find_help` (tool `find_social_help`) |
 | `list_duplicate_facilities.rq` | groups of facilities identical in all CSV columns except the IRI | `detect_duplicates` |
 | `list_duplicate_addresses.rq` | same for addresses | `detect_duplicates` |
 | `list_duplicate_services.rq` | same for services | `detect_duplicates` |
