@@ -126,6 +126,38 @@ same data (e.g. phone numbers lost their leading 0), and two facilities differ.
 | `test_load_query_without_required_param_raises` | a missing placeholder value raises `ValueError` naming the parameter |
 | `test_query_files_follow_naming_convention` (×1 per `.rq` file) | name matches `<action>_<entity>[_by_<param>][_per_<group>].rq`; every `{{param}}` is named after `_by_`; `_per_` queries use `GROUP BY`; `# Params:` and `# Used by:` header present |
 
+### `test_nearby.py` – `find_nearby` and `get_awo_details`
+
+Offline. Edge cases run on a small Turtle snippet (origin at postal code 99991, facilities at
+0, 0.56, 1.5 and 3 km, one without coordinates, offers and a provider); the directory check
+runs on `data/directory.ttl`. `NoQueryClient` fails if a query is sent, for inputs that must be
+rejected in Python.
+
+| Test | Checks |
+|---|---|
+| `test_haversine_one_degree_of_latitude` | 1° of latitude ≈ 111.19 km |
+| `test_bounding_box_contains_the_whole_circle` (×3) | every point exactly `radius_km` away (24 bearings, at 0°, 52.5° and 70° latitude) lies inside the box; the box is rounded outward |
+| `test_matches_terms` (×8) | comma-separated terms match any; case-insensitive; `ß` in the data matches `ss`; empty query matches |
+| `test_accessibility_flag` (×4) | "barrierefrei" → True, "nicht barrierefrei" → False, missing → None |
+| `test_source_page_decodes_caritas_redirects` | relative `/search.ashx?…&u=` links become the real Caritas URL |
+| `test_split_values` | `"; "`-joined values become a list |
+| `test_resolve_location_from_coordinates_sends_no_query` | `"lat,lon"` resolves in Python |
+| `test_resolve_location_rejects_bad_input_without_query` (×6) | street names, wrong-length postal codes and out-of-range coordinates → None, no query sent |
+| `test_resolve_location_from_postal_code_averages_its_addresses` | origin = average of the postal code's addresses with coordinates |
+| `test_resolve_location_unknown_postal_code` | unknown postal code → None |
+| `test_find_nearby_returns_facilities_within_radius_nearest_first` | only facilities within the radius, sorted by distance |
+| `test_find_nearby_excludes_facilities_without_coordinates` | facilities without coordinates never appear |
+| `test_find_nearby_matches_offers_and_any_term` | terms match linked offers; several terms match any of them |
+| `test_find_nearby_accessible_only_keeps_only_confirmed_accessible` | unknown and "nicht barrierefrei" are excluded |
+| `test_find_nearby_limit_and_total` | `limit` cuts the list; `total_found` counts all matches |
+| `test_find_nearby_clamps_radius` | radius is kept between 0.1 and 50 km |
+| `test_find_nearby_unresolvable_location` | unresolvable location → `error`, no results |
+| `test_get_awo_details_known_facility` | address, contacts, provider, decoded source link, map link and offers |
+| `test_get_awo_details_facility_without_offers` | no offers → `[]`; address without street |
+| `test_get_awo_details_unknown_iri` | unknown IRI or a service IRI → None |
+| `test_get_awo_details_rejects_malformed_iri_without_query` (×4) | foreign, quote-breaking, spaced or empty IRIs → None, no query sent |
+| `test_find_nearby_matches_independent_distance_check` (×2) | on `directory.ttl`, the result set equals facilities within the radius computed directly from the graph's triples |
+
 ### `test_repository.py` – `DataRepository` (reference implementation)
 | Test | Checks |
 |---|---|
@@ -165,16 +197,19 @@ This layer checks the MCP plumbing. Whether the results are correct is checked i
 
 | Test | Checks |
 |---|---|
-| `test_baseline_tools_are_listed` | none of the 8 baseline tools disappeared |
+| `test_baseline_tools_are_listed` | none of the 12 tools in `SMOKE_ARGS` disappeared |
 | `test_every_listed_tool_has_smoke_args` | **fails when someone adds a tool without registering it in `SMOKE_ARGS`** – the prompt to add tests |
-| `test_tool_metadata_is_llm_friendly` (×8) | docstring ≥ 20 chars, valid object schema, required ⊆ properties |
-| `test_tool_call_succeeds` (×8) | call with valid args returns no MCP error and non-empty output |
-| `test_tool_returns_valid_json_without_nan` (×7) | output parses as JSON; no bare `NaN` (`count_facilities` returns a plain number and is excluded) |
+| `test_tool_metadata_is_llm_friendly` (×12) | docstring ≥ 20 chars, valid object schema, required ⊆ properties |
+| `test_tool_call_succeeds` (×12) | call with valid args returns no MCP error and non-empty output |
+| `test_tool_returns_valid_json_without_nan` (×11) | output parses as JSON; no bare `NaN` (`count_facilities` returns a plain number and is excluded) |
 | `test_umlauts_are_not_escaped` | `ensure_ascii=False` works end-to-end |
 | `test_missing_required_argument_is_an_error` | error names the missing argument |
 | `test_wrong_argument_type_is_an_error` | wrong type rejected |
 | `test_unknown_tool_is_an_error` | unknown tool → error |
 | `test_server_starts_over_stdio` | `python server.py` starts and completes the MCP handshake |
+| `test_get_awo_details_unknown_iri_is_a_message_not_an_error` | unknown IRI → "No facility found" text, not an MCP error |
+| `test_find_nearby_unresolvable_location_reports_error` | a street name → JSON with `error` and no results |
+| `test_find_help_prompt_is_listed_and_renders` | `find_help` is listed with optional `situation`/`location`, renders with the inputs and tool names, has no unfilled placeholders, and says "not given yet" without inputs |
 
 ## Layer 3 – SPARQL API (`tests/api/test_sparql.py`)
 
@@ -212,7 +247,13 @@ in Python).
 | `test_check_completeness_consistent` | rows == dataset sizes; IRI never missing; cells and missing counts add up; percentages 0–100 |
 | `test_generate_statistics_consistent` | with + without address/provider == facility total; Berlin in `facilities_by_city` == `count_facilities`; per-provider and per-category sums are plausible |
 | `test_compare_facilities_equals_two_detail_lookups` | both sides == `get_facility_details` for each name, both non-empty |
-| `test_mcp_tool_returns_client_result` (×8) | every tool called over MCP returns exactly what `SparqlClient` returns (JSON round trip) |
+| `test_mcp_tool_returns_client_result` (×10) | every tool called over MCP returns exactly what `SparqlClient` returns (JSON round trip) |
+| `test_postal_code_origin_is_where_the_postal_code_is` | 10115 resolves to central Berlin |
+| `test_find_nearby_matches_independent_distance_check` (×2) | 10115 (1 km) and central Munich (1.5 km): result count == facilities within the radius from a plain coordinate query with distances in Python; results nearest first |
+| `test_find_nearby_query_only_narrows` | `query="Sucht"` finds some but not more than without a query |
+| `test_get_awo_details_known_facility` | org-229a4e0b1081 is vista WIGWAM Connect in Berlin, with a map link |
+| `test_get_awo_details_agrees_with_find_nearby` | details of the nearest result have the same name and address |
+| `test_get_awo_details_unknown_iri` | unknown IRI → None |
 
 ## Layer 4 – Connection smoke (`tests/llm/test_connection.py`)
 | Test | Checks |
@@ -239,7 +280,8 @@ Each failed run is labelled with the **stage** where it broke:
 8. `final answer missing expected content` – e.g. the real number from the tool
 
 Cases (`tests/evals/cases.json`): `count-berlin`, `search-facilities-berlin`,
-`facility-details`, `search-services-sucht`, `duplicates`, `completeness`, `statistics`, `compare`.
+`facility-details`, `search-services-sucht`, `duplicates`, `completeness`, `statistics`, `compare`,
+`nearby-postal-code`, `nearby-coordinates`, `awo-details-by-iri`.
 
 ### Testing a new feature
 1. Add valid arguments to `SMOKE_ARGS` in `tests/protocol/test_server.py`.

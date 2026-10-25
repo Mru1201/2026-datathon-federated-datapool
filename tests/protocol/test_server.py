@@ -12,7 +12,7 @@ import sys
 
 import pytest
 
-from tests.helpers import mcp_call, mcp_call_once, mcp_list_tools
+from tests.helpers import mcp_call, mcp_call_once, mcp_get_prompt, mcp_list_prompts, mcp_list_tools
 from conftest import ROOT
 
 # tool name -> valid arguments for a smoke call
@@ -27,6 +27,8 @@ SMOKE_ARGS = {
     "compare_facilities": {"facility_1": "Drehscheibe", "facility_2": "Metropolitankapitel"},
     "list_providers": {},
     "search_by_postal_code": {"postal_code": "10115"},
+    "find_nearby": {"location": "13353", "radius_km": 1, "query": "Sucht, Alkohol"},
+    "get_awo_details": {"iri": "https://civic-data.de/federated-directory#org-229a4e0b1081"},
 }
 JSON_TOOLS = [t for t in SMOKE_ARGS if t != "count_facilities"]
 
@@ -131,3 +133,35 @@ def test_server_starts_over_stdio():
     except Exception as exc:  # noqa: BLE001 - surface any startup failure with context
         pytest.fail(f"`{sys.executable} server.py` did not start/handshake over stdio: {exc!r}")
     assert set(SMOKE_ARGS) <= set(names), f"stdio server lists {names}, missing baseline tools"
+
+
+def test_get_awo_details_unknown_iri_is_a_message_not_an_error():
+    is_error, text = mcp_call("get_awo_details", {"iri": "https://civic-data.de/federated-directory#nope"})
+    assert not is_error, f"get_awo_details(<unknown iri>) returned an MCP error: {text[:200]!r}"
+    assert text.startswith("No facility found"), f"expected a 'No facility found' message, got: {text[:200]!r}"
+
+
+def test_find_nearby_unresolvable_location_reports_error():
+    is_error, text = mcp_call("find_nearby", {"location": "Müllerstraße"})
+    assert not is_error, f"find_nearby('Müllerstraße') returned an MCP error: {text[:200]!r}"
+    result = json.loads(text)
+    assert result["results"] == [] and "error" in result, (
+        f"find_nearby with a street name should return an 'error' and no results, got: {text[:200]!r}"
+    )
+
+
+def test_find_help_prompt_is_listed_and_renders():
+    prompts = {p.name: p for p in mcp_list_prompts()}
+    assert "find_help" in prompts, f"prompt 'find_help' not listed; listed: {sorted(prompts)}"
+    arguments = {a.name: a.required for a in prompts["find_help"].arguments or []}
+    assert arguments == {"situation": False, "location": False}, (
+        f"find_help should take optional 'situation' and 'location', got {arguments}"
+    )
+
+    text = mcp_get_prompt("find_help", {"situation": "Ich trinke zu viel", "location": "13353"})
+    for expected in ["Ich trinke zu viel", "13353", "find_nearby", "get_awo_details", "112"]:
+        assert expected in text, f"rendered find_help prompt is missing {expected!r}"
+    assert "{" not in text.replace("{{", ""), "rendered find_help prompt has an unfilled {placeholder}"
+
+    empty = mcp_get_prompt("find_help", {})
+    assert "not given yet" in empty, "find_help without arguments should say the inputs are not given yet"

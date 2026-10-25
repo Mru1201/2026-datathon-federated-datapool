@@ -39,7 +39,7 @@ Tools never build query strings themselves. User input only reaches a query thro
 
 | Path | What it is |
 |---|---|
-| `server.py` | The MCP server. Defines the 8 tools. Their docstrings are what the LLM reads to choose a tool, so keep them descriptive. |
+| `server.py` | The MCP server. Defines the tools and the `find_help` prompt. Tool docstrings are what the LLM reads to choose a tool, so keep them descriptive. |
 | `src/sparql_client.py` | `SparqlClient`: one method per tool, plus `load_query()` and the `DATASETS` definition (RDF class and columns of facilities, addresses, services, providers). |
 | `sparql_queries/` | The SPARQL queries, one `.rq` file each, with a fixed naming scheme and header ([QUERIES.md](QUERIES.md)). You can paste them into the endpoint's web UI. |
 | `src/legacy/` | The old pandas/CSV implementation. **Not used by the server.** Kept as the reference that the offline parity tests compare the SPARQL queries against. |
@@ -61,9 +61,20 @@ Tools never build query strings themselves. User input only reaches a query thro
 | `generate_statistics()` | Dataset sizes; facilities per city, category and provider; services per category and audience; how many facilities have an address or provider | "Give me statistics about the directory" |
 | `check_completeness()` | Missing values per dataset and column | "Which columns have missing values?" |
 | `detect_duplicates()` | Groups of entries that are identical except for their IRI | "Are there duplicate entries?" |
+| `find_nearby(location, radius_km, query, accessible_only, limit)` | Facilities within a radius of a postal code or `"latitude,longitude"`, nearest first, with distance, contacts and opening hours. `query` takes comma-separated terms and matches any of them | "Addiction counselling near 13353?" |
+| `get_awo_details(iri)` | Address, map link, contacts, opening hours, accessibility, offers, provider and source link for one facility | "What are the opening hours of this facility?" |
 
 Matching is case-insensitive (`GIESSEN` finds `Gießen`). City matches are **exact**, so
 `Berlin` does not include `Berlin-Mitte`. Name and service searches are substring matches.
+
+## Prompts
+
+| Prompt | What it does |
+|---|---|
+| **Find help near me** (`find_help(situation, location)`) | Takes a need in plain words ("I drink too much") and a postal code or place. Explains the kinds of help that exist and the usual first step, recommends 3–5 nearby places (who each is for, address, directions, hours, and a 1–5 relevance rating), lists who to contact first, and notes what the directory doesn't cover. Puts emergency numbers first if someone is in danger, and never invents contact details. |
+
+Ratings measure how good a first step a place is for the stated need, based on the directory
+data (fit, distance, reachability, access), not the quality of the service.
 
 ## Setup
 

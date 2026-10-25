@@ -5,6 +5,7 @@ and SparqlClient runs it and shapes the rows into the result of one MCP tool. Se
 """
 
 import json
+import math
 import os
 import re
 import urllib.parse
@@ -17,6 +18,19 @@ DEFAULT_ENDPOINT = "https://sosuse.correlaid.org/directory/sparql"
 QUERY_DIR = Path(__file__).resolve().parent.parent / "sparql_queries"
 
 PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
+
+FACILITY_IRI_PREFIX = "https://civic-data.de/federated-directory#"
+
+COORDINATES = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$")
+
+POSTAL_CODE = re.compile(r"^\d{5}$")
+
+EARTH_RADIUS_KM = 6371.0
+
+# find_nearby searches at most this far, so a bounding-box query stays small.
+MAX_RADIUS_KM = 50.0
+
+MAX_NEARBY_RESULTS = 50
 
 NAMESPACES = {
     "schema:": "http://schema.org/",
@@ -126,6 +140,128 @@ def to_float(value: str | None) -> float | None:
     """Convert a coordinate literal to float (None stays None)."""
 
     return float(value) if value is not None else None
+
+
+def split_values(value: str | None) -> list[str]:
+    """Split a "; "-joined GROUP_CONCAT value into a list (None -> [])."""
+
+    return [part.strip() for part in (value or "").split(";") if part.strip()]
+
+
+def casefold_de(text: str) -> str:
+    """Casefold like the queries do: lower case and ß -> ss."""
+
+    return text.casefold().replace("ß", "ss")
+
+
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance between two points in kilometres."""
+
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+
+    a = (
+        math.sin((lat2 - lat1) / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
+    )
+
+    return EARTH_RADIUS_KM * 2 * math.asin(math.sqrt(a))
+
+
+def bounding_box(latitude: float, longitude: float, radius_km: float) -> str:
+    """
+    The "south,west,north,east" box around a point that contains every point within
+    radius_km, as list_facilities_by_bbox.rq expects it.
+    """
+
+    lat_delta = math.degrees(radius_km / EARTH_RADIUS_KM)
+    lon_delta = lat_delta / max(math.cos(math.radians(latitude)), 1e-6)
+
+    # Round outward to 6 decimals so the box never cuts into the circle.
+    def down(value: float) -> str:
+        return f"{math.floor(value * 1e6) / 1e6:.6f}"
+
+    def up(value: float) -> str:
+        return f"{math.ceil(value * 1e6) / 1e6:.6f}"
+
+    return ",".join(
+        [
+            down(latitude - lat_delta),
+            down(longitude - lon_delta),
+            up(latitude + lat_delta),
+            up(longitude + lon_delta),
+        ]
+    )
+
+
+def accessibility_flag(summary: str | None) -> bool | None:
+    """Read the accessibility sentence as True, False, or None when unknown."""
+
+    text = (summary or "").casefold()
+
+    if "nicht barrierefrei" in text:
+        return False
+
+    if "barrierefrei" in text:
+        return True
+
+    return None
+
+
+def source_page(value: str | None) -> str | None:
+    """
+    The facility's page in its source directory.
+
+    Older Caritas records store a relative redirect ("/search.ashx?...&u=<url>"),
+    so the real URL is taken from its "u" parameter.
+    """
+
+    if not value:
+        return None
+
+    if value.startswith(("http://", "https://")):
+        return value
+
+    if value.startswith("/search.ashx"):
+        target = urllib.parse.parse_qs(urllib.parse.urlparse(value).query).get("u", [""])[0]
+        return target.split("?")[0] or None
+
+    return None
+
+
+def map_link(latitude: float | None, longitude: float | None, fallback: str) -> str | None:
+    """Google Maps link for coordinates, or a text search when they are missing."""
+
+    query = f"{latitude},{longitude}" if latitude is not None and longitude is not None else fallback
+
+    if not query:
+        return None
+
+    return "https://www.google.com/maps/search/?api=1&query=" + urllib.parse.quote(query)
+
+
+def format_address(street: str | None, postal_code: str | None, city: str | None) -> str | None:
+    """ "Street, Postal code City", leaving out missing parts."""
+
+    locality = " ".join(part for part in [postal_code, city] if part)
+
+    return ", ".join(part for part in [street, locality] if part) or None
+
+
+def matches_terms(texts: list[str | None], query: str | None) -> bool:
+    """
+    True when any comma-separated term in query appears in the texts.
+
+    Matching is a casefolded substring, like the queries. An empty query matches.
+    """
+
+    terms = [casefold_de(term.strip()) for term in (query or "").split(",") if term.strip()]
+
+    if not terms:
+        return True
+
+    text = casefold_de(" ".join(value for value in texts if value))
+
+    return any(term in text for term in terms)
 
 
 def load_query(query_name: str, /, **params: str) -> str:
@@ -411,3 +547,172 @@ class SparqlClient:
             }
             for name in [facility_1, facility_2]
         ]
+
+
+    def resolve_location(self, location: str) -> dict | None:
+        """
+        Turn a location into search coordinates.
+
+        Accepts "latitude,longitude" or a five-digit postal code (the average position
+        of the addresses with that code). Returns None when it can't be resolved.
+        """
+
+        match = COORDINATES.match(location)
+
+        if match:
+            latitude, longitude = float(match.group(1)), float(match.group(2))
+
+            if -90 <= latitude <= 90 and -180 <= longitude <= 180:
+                return {
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "matched_by": "coordinates",
+                }
+
+            return None
+
+        postal_code = location.strip()
+
+        if not POSTAL_CODE.match(postal_code):
+            return None
+
+        result = self.select("get_postal_code_location_by_postal_code", postal_code=postal_code)
+
+        if not result or int(result[0]["addresses"]) == 0:
+            return None
+
+        return {
+            "latitude": float(result[0]["latitude"]),
+            "longitude": float(result[0]["longitude"]),
+            "matched_by": "postal_code",
+            "matched_addresses": int(result[0]["addresses"]),
+        }
+
+    def find_nearby(
+        self,
+        location: str,
+        radius_km: float = 2.0,
+        query: str | None = None,
+        accessible_only: bool = False,
+        limit: int = 10,
+    ) -> dict:
+        """Find facilities within radius_km of a location, nearest first."""
+
+        radius_km = min(max(float(radius_km), 0.1), MAX_RADIUS_KM)
+        limit = min(max(int(limit), 1), MAX_NEARBY_RESULTS)
+
+        origin = self.resolve_location(location)
+
+        if origin is None:
+            return {
+                "location": location,
+                "error": (
+                    "Could not resolve the location. Use 'latitude,longitude' "
+                    "(e.g. '52.5446,13.3592') or a five-digit postal code."
+                ),
+                "results": [],
+            }
+
+        bbox = bounding_box(origin["latitude"], origin["longitude"], radius_km)
+        results = []
+
+        for row in self.select("list_facilities_by_bbox", bbox=bbox):
+            latitude, longitude = to_float(row["latitude"]), to_float(row["longitude"])
+            accessible = accessibility_flag(row["accessibility"])
+
+            if accessible_only and accessible is not True:
+                continue
+
+            if not matches_terms(
+                [
+                    row["name"], row["alternate_name"], row["category"], row["audience"],
+                    row["service_description"], row["offers"], row["offer_categories"],
+                ],
+                query,
+            ):
+                continue
+
+            distance = haversine_km(origin["latitude"], origin["longitude"], latitude, longitude)
+
+            if distance > radius_km:
+                continue
+
+            results.append(
+                {
+                    "iri": row["facility"],
+                    "name": row["name"],
+                    "distance_km": round(distance, 2),
+                    "address": format_address(row["street"], row["postal_code"], row["city"]),
+                    "category": row["category"],
+                    "audience": split_values(row["audience"]),
+                    "offers": split_values(row["offers"]),
+                    "accessible": accessible,
+                    "telephone": row["telephone"],
+                    "email": row["email"],
+                    "homepage": row["homepage"],
+                    "opening_hours": row["opening_hours"],
+                    "latitude": latitude,
+                    "longitude": longitude,
+                }
+            )
+
+        results.sort(key=lambda result: (result["distance_km"], result["iri"]))
+
+        return {
+            "location": location,
+            "origin": origin,
+            "radius_km": radius_km,
+            "total_found": len(results),
+            "results": results[:limit],
+        }
+
+    def get_awo_details(self, iri: str) -> dict | None:
+        """
+        Address, map link, contacts, opening hours, offers and source link for one
+        facility, by IRI. Returns None for an unknown or malformed IRI.
+        """
+
+        iri = iri.strip()
+
+        if not iri.startswith(FACILITY_IRI_PREFIX) or re.search(r"[\s<>\"{}|\\^`]", iri):
+            return None
+
+        result = self.select("get_facility_details_by_iri", iri=iri)
+
+        if not result:
+            return None
+
+        row = result[0]
+        latitude, longitude = to_float(row["latitude"]), to_float(row["longitude"])
+        address = format_address(row["street"], row["postal_code"], row["city"])
+
+        offers = []
+        for offer in split_values(row["offers"]):
+            name, _, category = (part.strip() for part in offer.partition("|"))
+            if name or category:
+                offers.append(
+                    {
+                        "name": name or category,
+                        "category": category if name and category != name else None,
+                    }
+                )
+
+        return {
+            "iri": row["facility"],
+            "name": row["name"],
+            "alternate_name": row["alternate_name"],
+            "category": row["category"],
+            "address": address,
+            "map_url": map_link(
+                latitude, longitude, ", ".join(part for part in [row["name"], address] if part)
+            ),
+            "telephone": row["telephone"],
+            "email": row["email"],
+            "homepage": row["homepage"],
+            "source_url": source_page(row["source_url"]),
+            "opening_hours": row["opening_hours"],
+            "accessibility": row["accessibility"],
+            "offers": offers,
+            "provider": row["provider_name"],
+            "provider_type": row["provider_type"],
+        }
